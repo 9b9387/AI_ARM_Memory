@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import logging
 import sqlite3
 from contextlib import nullcontext
 from datetime import timedelta
 from pathlib import Path
 from typing import Iterable, Sequence
 from uuid import uuid4
+
+from loguru import logger
 
 from arm_memory.domain.models import (
     ConversationTurn,
@@ -32,8 +33,6 @@ from arm_memory.domain.models import (
     RelationshipState,
 )
 from arm_memory.utils import dumps_json, loads_json, normalize_text, parse_iso_datetime, to_iso, utcnow
-
-logger = logging.getLogger(__name__)
 
 
 class _ClosingConnection(sqlite3.Connection):
@@ -1360,7 +1359,7 @@ class SQLiteMemoryStore:
             archived = cur.rowcount
         if archived:
             logger.info(
-                "archive_stale_traces project=%s user=%s archived=%d min_age_days=%d max_salience=%.2f",
+                "archive_stale_traces project={} user={} archived={} min_age_days={} max_salience={:.2f}",
                 project_id, user_id, archived, min_age_days, max_salience,
             )
         return archived
@@ -1436,7 +1435,7 @@ class SQLiteMemoryStore:
                 (now, keep.trace_id, discard.trace_id),
             )
         logger.info(
-            "merge_trace keep=%s discard=%s salience=%.2f access_count=%d",
+            "merge_trace keep={} discard={} salience={:.2f} access_count={}",
             keep.trace_id, discard.trace_id, new_salience, new_access_count,
         )
 

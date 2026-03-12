@@ -12,19 +12,32 @@
 项目已增加 `.python-version`，固定为：
 
 ```text
-3.12.9
+3.12.13
 ```
 
-推荐使用 `pyenv` + `venv`：
+本项目以 `pyproject.toml` 作为依赖声明来源，仓库中**没有** `requirements.txt`；推荐使用 `pyenv` + `venv` 后通过可编辑安装拉起依赖。
+
+推荐安装方式：
 
 ```bash
-pyenv local 3.12.9
+pyenv local 3.12.13
 pyenv exec python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-pip install -r requirements.txt
-pip install -r telegram_bot/requirements.txt
+python -m pip install -e .
 ```
+
+如果需要运行测试，再安装开发依赖：
+
+```bash
+python -m pip install -e '.[dev]'
+```
+
+说明：
+
+- 运行时依赖来自 `pyproject.toml` 的 `[project.dependencies]`
+- 测试依赖当前来自 `[project.optional-dependencies].dev`，目前包含 `pytest`
+- 安装完成后可直接使用入口命令 `arm-memory`
 
 如果安装依赖时遇到网络问题，可以使用代理：
 
@@ -73,6 +86,8 @@ export ARM_NEO4J_PASSWORD=arm-memory-dev
 export ARM_SERVICE_HOST=127.0.0.1
 export ARM_SERVICE_PORT=8788
 export ARM_SERVICE_WS_PATH=/ws
+export ARM_LOG_LEVEL=INFO
+export ARM_LOG_DIR=$(pwd)/data/arm_memory/logs
 export ARM_EMBEDDING_PROVIDER=mlx
 export ARM_EMBEDDING_MODEL=mlx-community/Qwen3-Embedding-0.6B-mxfp8
 export ARM_VECTOR_DIMENSIONS=1024
@@ -91,8 +106,18 @@ python -m arm_memory --host 127.0.0.1 --port 8788
 - 创建或校验 Qdrant collection
 - 检查 Qdrant 连通性
 - 检查 Neo4j 连通性
+- 初始化控制台 + 本地文件日志（默认文件：`./data/arm_memory/logs/arm_memory.log`）
+- 日志底层使用 `loguru`，文件日志默认按大小轮转
 - 初始化 WebSocket 路由
 - 启动远端同步 outbox 的后台自动补偿循环（默认每 60 秒一次）
+
+运行过程中，日志会记录：
+
+- 服务启动配置与依赖检查结果
+- WebSocket 连接、`action`、`request_id`、处理耗时、成功/失败
+- `ingest_turn`、`build_context`、`apply_extraction`、outbox 重放等关键动作的摘要信息
+
+日志默认不会写入原始用户消息内容、完整抽取文本或敏感凭据；如需更改落盘文件，可额外设置 `ARM_LOG_PATH`。
 
 如果需要人工触发一次补偿重放，可以通过 WebSocket 发送 `replay_remote_sync_outbox` 动作，服务会返回本次处理结果和当前 outbox 汇总状态。
 

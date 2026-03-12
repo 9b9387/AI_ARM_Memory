@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import base64
-import logging
 from typing import Any
 
 import httpx
+from loguru import logger
 
 from arm_memory.domain.models import GraphEdge, RelationshipState, SemanticFact
-
-logger = logging.getLogger(__name__)
 
 
 class Neo4jGraphStore:
@@ -43,7 +41,7 @@ class Neo4jGraphStore:
             self._execute("RETURN 1 AS ok", {}, strict=True)
             return True
         except Exception:
-            logger.warning("Failed to reach Neo4j", exc_info=True)
+            logger.exception("Failed to reach Neo4j")
             return False
 
     def _execute(
@@ -75,7 +73,7 @@ class Neo4jGraphStore:
         except Exception:
             if strict:
                 raise
-            logger.warning("Neo4j request failed", exc_info=True)
+            logger.exception("Neo4j request failed")
             return []
 
     def sync_fact(self, fact: SemanticFact) -> None:

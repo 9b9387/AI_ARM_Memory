@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 from arm_memory.config import ARMConfig
 from arm_memory.consolidation import SleepCycleConsolidator
 from arm_memory.domain.models import (
@@ -32,7 +34,6 @@ from arm_memory.retrieval import HybridRetrievalEngine
 from arm_memory.stores import Neo4jGraphStore, QdrantVectorStore, SQLiteMemoryStore
 from arm_memory.utils import parse_markdown_document, read_text_if_exists, utcnow
 from arm_memory.vectorizer import EmbeddingProvider, build_embedding_provider
-
 
 
 class ARMMemoryService:
@@ -76,6 +77,13 @@ class ARMMemoryService:
             neo4j_store=self.neo4j_store,
         )
         self._ensure_default_persona_seed(project_id="system", user_id="system")
+        logger.info(
+            "ARM memory service initialized: sqlite={} qdrant_enabled={} neo4j_enabled={} log_path={}",
+            self.config.sqlite_path,
+            self.qdrant_store.enabled,
+            self.neo4j_store.enabled,
+            self.config.log_path,
+        )
 
     @classmethod
     def from_env(cls, *, base_dir: Path | None = None) -> "ARMMemoryService":
@@ -88,6 +96,12 @@ class ARMMemoryService:
         user_id: str,
         message: str,
     ) -> BuildContextResult:
+        logger.info(
+            "Building context: project_id={} user_id={} message_length={}",
+            project_id,
+            user_id,
+            len(message),
+        )
         persona_prompt = self.load_persona_prompt(project_id=project_id, user_id=user_id)
         relationship = self.sqlite_store.load_relationship_state(project_id, user_id)
         snapshot = self.sqlite_store.load_user_manual(project_id, user_id)
@@ -112,13 +126,21 @@ class ARMMemoryService:
             relationship=relationship,
             hits=hits,
         )
-        return BuildContextResult(
+        result = BuildContextResult(
             persona_prompt=persona_prompt,
             relationship_prompt=self._format_relationship_prompt(relationship),
             user_manual_summary=snapshot.content,
             top_memories=hits,
             triggered_procedures=procedures,
         )
+        logger.info(
+            "Context built: project_id={} user_id={} hits={} procedures={}",
+            project_id,
+            user_id,
+            len(result.top_memories),
+            len(result.triggered_procedures),
+        )
+        return result
 
     def get_relationship_state(self, *, project_id: str, user_id: str) -> RelationshipState:
         return self.sqlite_store.load_relationship_state(project_id, user_id)
@@ -232,6 +254,15 @@ class ARMMemoryService:
             metadata=metadata or {},
         )
         self.sqlite_store.store_turn(turn)
+        logger.info(
+            "Turn ingested: project_id={} user_id={} session_id={} role={} turn_id={} content_length={}",
+            project_id,
+            user_id,
+            session_id,
+            role,
+            turn.turn_id,
+            len(content),
+        )
         return turn.turn_id
 
     def apply_extraction(
@@ -245,15 +276,30 @@ class ARMMemoryService:
     ):
         """接收外部已生成的结构化抽取结果并写入存储。对话→抽取由调用方在项目外完成。"""
         if not extraction:
+            logger.info(
+                "Apply extraction skipped: project_id={} user_id={} reason=empty_extraction",
+                project_id,
+                user_id,
+            )
             return ConsolidationResult(notes=["extraction 为空，未执行写入。"])
         prompt = persona_prompt or self.load_persona_prompt(project_id=project_id, user_id=user_id)
-        return self.consolidator.apply_extraction(
+        result = self.consolidator.apply_extraction(
             project_id=project_id,
             user_id=user_id,
             extraction=extraction,
             turn_ids=turn_ids,
             persona_prompt=prompt,
         )
+        logger.info(
+            "Extraction applied: project_id={} user_id={} episodic={} semantic={} procedures={} operations={}",
+            project_id,
+            user_id,
+            result.episodic_count,
+            result.semantic_count,
+            len(result.triggered_procedures),
+            result.operations,
+        )
+        return result
 
     def manual_remember(
         self,
@@ -340,6 +386,14 @@ class ARMMemoryService:
             persona_prompt=self.load_persona_prompt(project_id=project_id, user_id=user_id),
         )
         self.sqlite_store.save_user_manual(snapshot)
+        logger.info(
+            "Manual memory saved: project_id={} user_id={} trace_id={} operation={} tags={}",
+            project_id,
+            user_id,
+            trace.trace_id,
+            operation.value,
+            normalized_tags,
+        )
         return operation
 
     def get_summary(self, *, project_id: str, user_id: str) -> str:
@@ -387,6 +441,7 @@ class ARMMemoryService:
 
     def clear_user_data(self, *, project_id: str, user_id: str) -> None:
         self.sqlite_store.clear_user_data(project_id, user_id)
+        logger.warning("User data cleared: project_id={} user_id={}", project_id, user_id)
 
     def replay_remote_sync_outbox(self, *, limit: int = 50) -> dict[str, int]:
         tasks = self.sqlite_store.claim_remote_sync_tasks(limit=limit)
@@ -399,9 +454,17 @@ class ARMMemoryService:
             except Exception as exc:
                 self.sqlite_store.mark_remote_sync_task_failed(task_id, error_message=str(exc))
                 result["failed"] += 1
+                logger.warning(
+                    "Remote sync replay failed: task_id={} backend={} operation={} error={}",
+                    task_id,
+                    task.get("backend"),
+                    task.get("operation"),
+                    exc,
+                )
             else:
                 self.sqlite_store.mark_remote_sync_task_done(task_id)
                 result["succeeded"] += 1
+        logger.info("Remote sync replay summary: {}", result)
         return result
 
     def get_remote_sync_outbox_summary(self) -> dict[str, int]:
@@ -447,6 +510,13 @@ class ARMMemoryService:
             metadata=metadata or {},
         )
         self.sqlite_store.save_profile_item(item, facet_limit=self.config.profile_item_limit_per_facet)
+        logger.info(
+            "Profile item saved: project_id={} user_id={} facet_type={} source={}",
+            project_id,
+            user_id,
+            item.facet_type.value,
+            source,
+        )
         return item
 
     def list_personas(
@@ -473,11 +543,27 @@ class ARMMemoryService:
 
     def save_persona(self, persona: PersonaDefinition) -> PersonaDefinition:
         self.sqlite_store.save_persona(persona)
+        logger.info(
+            "Persona saved: project_id={} user_id={} persona_id={} name={} active={}",
+            persona.project_id,
+            persona.user_id,
+            persona.persona_id,
+            persona.name,
+            persona.is_active,
+        )
         return persona
 
     def activate_persona(self, *, project_id: str, user_id: str, persona_id: str) -> PersonaDefinition:
         self.sqlite_store.activate_persona(project_id, user_id, persona_id)
-        return self.get_active_persona(project_id=project_id, user_id=user_id)
+        persona = self.get_active_persona(project_id=project_id, user_id=user_id)
+        logger.info(
+            "Persona activated: project_id={} user_id={} persona_id={} name={}",
+            project_id,
+            user_id,
+            persona.persona_id,
+            persona.name,
+        )
+        return persona
 
     def _validate_remote_dependencies(self) -> None:
         """当 config 要求时，校验 Qdrant / Neo4j 已配置且可达，否则退出并输出启动方法。"""

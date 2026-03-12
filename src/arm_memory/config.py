@@ -31,9 +31,12 @@ def _mask_secret(value: str, *, keep: int = 4) -> str:
 class ARMConfig:
     base_dir: Path
     data_dir: Path
+    log_dir: Path
+    log_path: Path
     sqlite_path: Path
     policies_dir: Path
     companion_profile_path: Path
+    log_level: str = "INFO"
     qdrant_url: str = ""
     qdrant_collection: str = "arm_memory"
     neo4j_url: str = ""
@@ -82,6 +85,8 @@ class ARMConfig:
         package_dir = _here
         project_root = (base_dir or _here.parent.parent).resolve()
         data_dir = _env_path("ARM_DATA_DIR", project_root / "data" / "arm_memory")
+        log_dir = _env_path("ARM_LOG_DIR", data_dir / "logs")
+        log_path = _env_path("ARM_LOG_PATH", log_dir / "arm_memory.log")
         sqlite_path = _env_path("ARM_SQLITE_PATH", data_dir / "arm_memory.db")
         policies_dir = _env_path("ARM_POLICIES_DIR", project_root / "policies")
         companion_profile_path = _env_path(
@@ -91,9 +96,12 @@ class ARMConfig:
         return cls(
             base_dir=project_root,
             data_dir=data_dir,
+            log_dir=log_dir,
+            log_path=log_path,
             sqlite_path=sqlite_path,
             policies_dir=policies_dir,
             companion_profile_path=companion_profile_path,
+            log_level=os.getenv("ARM_LOG_LEVEL", "INFO"),
             qdrant_url=os.getenv("ARM_QDRANT_URL", ""),
             qdrant_collection=os.getenv("ARM_QDRANT_COLLECTION", "arm_memory"),
             neo4j_url=os.getenv("ARM_NEO4J_URL", ""),
@@ -158,6 +166,10 @@ class ARMConfig:
                 "[Files] "
                 f"profile={self.companion_profile_path} policies={self.policies_dir} "
                 f"companion_node={self.companion_node_name}"
+            ),
+            (
+                "[Logging] "
+                f"level={self.log_level} log_dir={self.log_dir} log_path={self.log_path}"
             ),
             (
                 "[Retrieval] "

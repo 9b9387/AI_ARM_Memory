@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import logging
 import math
 import time
 from datetime import datetime
+
+from loguru import logger
 
 from arm_memory.config import ARMConfig
 from arm_memory.domain.models import MemoryKind, MemoryTrace, RetrievalHit
@@ -12,8 +13,6 @@ from arm_memory.stores.qdrant_store import QdrantVectorStore
 from arm_memory.stores.sqlite_store import SQLiteMemoryStore
 from arm_memory.utils import clamp, cosine_similarity, normalize_text, utcnow
 from arm_memory.vectorizer import EmbeddingProvider
-
-logger = logging.getLogger(__name__)
 
 
 class HybridRetrievalEngine:
@@ -103,16 +102,16 @@ class HybridRetrievalEngine:
         scored.sort(key=lambda hit: hit.score, reverse=True)
         results = scored[:limit]
         elapsed_ms = (time.monotonic() - t0) * 1000
-        if results and logger.isEnabledFor(logging.DEBUG):
+        if results:
             for hit in results[:3]:
                 logger.debug(
-                    "retrieval_hit trace_id=%s score=%.4f breakdown=%s",
+                    "retrieval_hit trace_id={} score={:.4f} breakdown={}",
                     hit.trace.trace_id,
                     hit.score,
                     hit.score_breakdown,
                 )
         logger.info(
-            "retrieval_complete candidates=%d scored=%d returned=%d elapsed_ms=%.1f top_score=%.4f",
+            "retrieval_complete candidates={} scored={} returned={} elapsed_ms={:.1f} top_score={:.4f}",
             len(traces),
             len(scored),
             len(results),

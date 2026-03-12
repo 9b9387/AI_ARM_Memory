@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import logging
 import time
 from typing import Any
 
+from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
 from arm_memory.config import ARMConfig
@@ -33,8 +33,6 @@ from arm_memory.stores.qdrant_store import QdrantVectorStore
 from arm_memory.stores.sqlite_store import SQLiteMemoryStore
 from arm_memory.utils import clamp, normalize_text, utcnow
 from arm_memory.vectorizer import EmbeddingProvider
-
-logger = logging.getLogger(__name__)
 
 
 class _ConsolidationBaseModel(BaseModel):
@@ -326,7 +324,7 @@ class SleepCycleConsolidator:
             )
             result.notes.append(f"archived_traces={archived}")
         except Exception:
-            logger.warning("archive_stale_traces failed", exc_info=True)
+            logger.exception("archive_stale_traces failed")
 
         try:
             pairs = self.sqlite_store.find_similar_trace_pairs(
@@ -346,12 +344,12 @@ class SleepCycleConsolidator:
             if merge_count:
                 result.notes.append(f"merged_traces={merge_count}")
         except Exception:
-            logger.warning("merge_similar_traces failed", exc_info=True)
+            logger.exception("merge_similar_traces failed")
 
         elapsed_ms = (time.monotonic() - t0) * 1000
         logger.info(
-            "apply_extraction_complete project=%s user=%s turn_ids=%d "
-            "episodic=%d semantic=%d added=%d updated=%d elapsed_ms=%.1f notes=%s",
+            "apply_extraction_complete project={} user={} turn_ids={} "
+            "episodic={} semantic={} added={} updated={} elapsed_ms={:.1f} notes={}",
             project_id,
             user_id,
             len(turn_ids) if turn_ids else 0,

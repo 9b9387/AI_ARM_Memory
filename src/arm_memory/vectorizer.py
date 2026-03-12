@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import logging
 import math
 import re
 from typing import Protocol
 
 import httpx
+from loguru import logger
 
 from arm_memory.config import ARMConfig
-
-logger = logging.getLogger(__name__)
 
 
 _STOP_WORDS = frozenset(
@@ -105,7 +103,7 @@ class OpenAICompatibleEmbeddingProvider:
             self.embed("healthcheck")
             return True
         except Exception:
-            logger.warning("OpenAI-compatible embedding provider healthcheck failed", exc_info=True)
+            logger.exception("OpenAI-compatible embedding provider healthcheck failed")
             return False
 
 
@@ -154,7 +152,7 @@ class MLXEmbeddingProvider:
             self.embed("healthcheck")
             return True
         except Exception:
-            logger.warning("MLX embedding provider healthcheck failed", exc_info=True)
+            logger.exception("MLX embedding provider healthcheck failed")
             return False
 
     def _load(self):
@@ -179,7 +177,7 @@ class MLXEmbeddingProvider:
                 load_from = str(local_model_dir)
             else:
                 logger.info(
-                    "本地模型目录不存在或未就绪，正在下载到 %s: %s",
+                    "本地模型目录不存在或未就绪，正在下载到 {}: {}",
                     local_model_dir,
                     self.model_name,
                 )
@@ -244,8 +242,7 @@ def build_embedding_provider(config: ARMConfig) -> EmbeddingProvider:
             )
         raise ValueError(f"Unsupported embedding provider: {config.embedding_provider}")
     except Exception:
-        logger.warning(
-            "Embedding provider initialisation failed; configure a valid provider (e.g. mlx or openai).",
-            exc_info=True,
+        logger.exception(
+            "Embedding provider initialisation failed; configure a valid provider (e.g. mlx or openai)."
         )
         raise

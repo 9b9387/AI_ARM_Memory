@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+import time
 from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from loguru import logger
 
 from arm_memory.domain.models import SensitivityLevel, persona_from_dict, relationship_from_dict
+from arm_memory.logging_config import setup_logging
 from arm_memory.protocol import ARMError, ARMEvent, ARMRequest, ARMResponse
 from arm_memory.service import ARMMemoryService
-
-logger = logging.getLogger(__name__)
 _OUTBOX_REPLAY_INTERVAL_SECONDS = 60
 _OUTBOX_REPLAY_LIMIT = 50
 
@@ -22,27 +22,59 @@ class ARMWebSocketSession:
 
     async def serve(self) -> None:
         await self.websocket.accept()
+        client = self._client_label()
+        logger.info("ARM websocket connected: client={}", client)
         while True:
             try:
                 raw = await self.websocket.receive_text()
             except WebSocketDisconnect:
+                logger.info("ARM websocket disconnected: client={}", client)
                 return
             except Exception:
-                logger.exception("ARM websocket receive failed")
+                logger.exception("ARM websocket receive failed: client={}", client)
                 return
 
+            request: ARMRequest | None = None
+            started_at = time.perf_counter()
             try:
                 request = ARMRequest.from_json(raw)
+                logger.info(
+                    "ARM websocket request received: client={} action={} request_id={}",
+                    client,
+                    request.action,
+                    request.request_id,
+                )
                 await self._dispatch(request)
+                elapsed_ms = (time.perf_counter() - started_at) * 1000
+                logger.info(
+                    "ARM websocket request completed: client={} action={} request_id={} duration_ms={:.2f}",
+                    client,
+                    request.action,
+                    request.request_id,
+                    elapsed_ms,
+                )
             except Exception as exc:
-                logger.exception("ARM websocket request handling failed")
+                action = request.action if request is not None else "unknown"
+                request_id = request.request_id if request is not None else "unknown"
+                logger.exception(
+                    "ARM websocket request handling failed: client={} action={} request_id={}",
+                    client,
+                    action,
+                    request_id,
+                )
                 error = ARMError(
-                    request_id="unknown",
-                    action="unknown",
+                    request_id=request_id,
+                    action=action,
                     code="invalid_request",
                     message=str(exc),
                 )
                 await self.websocket.send_text(error.to_json())
+
+    def _client_label(self) -> str:
+        client = self.websocket.client
+        if client is None:
+            return "unknown"
+        return f"{client.host}:{client.port}"
 
     async def _dispatch(self, request: ARMRequest) -> None:
         action = request.action
@@ -269,6 +301,11 @@ async def _run_outbox_consumer(
     service: ARMMemoryService,
     stop_event: asyncio.Event,
 ) -> None:
+    logger.info(
+        "ARM outbox replay loop started: interval_seconds={} limit={}",
+        _OUTBOX_REPLAY_INTERVAL_SECONDS,
+        _OUTBOX_REPLAY_LIMIT,
+    )
     while not stop_event.is_set():
         try:
             result = await asyncio.to_thread(
@@ -276,10 +313,10 @@ async def _run_outbox_consumer(
                 limit=_OUTBOX_REPLAY_LIMIT,
             )
             if any(result.values()):
-                logger.info("ARM outbox replay result: %s", result)
+                logger.info("ARM outbox replay result: {}", result)
             summary = await asyncio.to_thread(service.get_remote_sync_outbox_summary)
             if summary.get("failed", 0) > 0:
-                logger.warning("ARM outbox still has failed tasks: %s", summary)
+                logger.warning("ARM outbox still has failed tasks: {}", summary)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -293,13 +330,25 @@ async def _run_outbox_consumer(
         except asyncio.TimeoutError:
             continue
 
+    logger.info("ARM outbox replay loop stopped")
+
 
 def create_app(*, service: ARMMemoryService | None = None) -> FastAPI:
     service_instance = service or ARMMemoryService.from_env()
+    setup_logging(
+        log_path=service_instance.config.log_path,
+        log_level=service_instance.config.log_level,
+    )
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
+    logger.info(
+        "ARM FastAPI app created: ws_path={} log_path={}",
+        service_instance.config.service_ws_path,
+        service_instance.config.log_path,
+    )
 
     @app.on_event("startup")
     async def startup() -> None:
+        logger.info("ARM application startup")
         stop_event = asyncio.Event()
         app.state.outbox_stop_event = stop_event
         app.state.outbox_task = asyncio.create_task(
@@ -308,6 +357,7 @@ def create_app(*, service: ARMMemoryService | None = None) -> FastAPI:
 
     @app.on_event("shutdown")
     async def shutdown() -> None:
+        logger.info("ARM application shutdown")
         stop_event: asyncio.Event | None = getattr(app.state, "outbox_stop_event", None)
         task: asyncio.Task | None = getattr(app.state, "outbox_task", None)
         if stop_event is not None:

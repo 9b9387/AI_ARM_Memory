@@ -68,22 +68,35 @@ AI 伴侣要像「真人」一样长期相处，离不开**记忆**：记得用�
 
 ### 2.1 前置条件：Qdrant 与 Neo4j 必须已启动
 
-**启动 Qdrant（示例，默认 6333 端口）：**
+**启动 Qdrant（示例，默认 6333 端口，挂载到项目本地目录持久化）：**
 
 ```bash
-docker run -d --name qdrant -p 6333:6333 qdrant/qdrant
+mkdir -p ./data/qdrant
+docker run -d --name qdrant \
+  -p 6333:6333 \
+  -v "$(pwd)/data/qdrant:/qdrant/storage" \
+  qdrant/qdrant
 ```
 
 配置环境变量：`ARM_QDRANT_URL=http://127.0.0.1:6333`（或你的 Qdrant 地址）。
 
-**启动 Neo4j（示例，默认 7474/7687）：**
+**启动 Neo4j（示例，默认 7474/7687，挂载到项目本地目录持久化）：**
 
 ```bash
-docker run -d --name neo4j -p 7474:7474 -p 7687:7687 \
-  -e NEO4J_AUTH=neo4j/your-password neo4j:latest
+mkdir -p ./data/neo4j/data ./data/neo4j/logs ./data/neo4j/plugins ./data/neo4j/import
+docker run -d --name neo4j \
+  -p 7474:7474 -p 7687:7687 \
+  -v "$(pwd)/data/neo4j/data:/data" \
+  -v "$(pwd)/data/neo4j/logs:/logs" \
+  -v "$(pwd)/data/neo4j/plugins:/plugins" \
+  -v "$(pwd)/data/neo4j/import:/import" \
+  -e NEO4J_AUTH=neo4j/your-password \
+  neo4j:latest
 ```
 
 配置环境变量：`ARM_NEO4J_URL=http://127.0.0.1:7474`、`ARM_NEO4J_USER=neo4j`、`ARM_NEO4J_PASSWORD=your-password`。
+
+上述目录均以**项目根目录**为基准；这样容器重启或重建后，Qdrant 与 Neo4j 的数据仍会保留在本地 `./data/` 下。
 
 ### 2.2 启动
 
@@ -98,6 +111,13 @@ python main.py --host 0.0.0.0 --port 8788
 ```
 
 环境变量见 `.env.example`，主要包括：`ARM_QDRANT_URL`、`ARM_NEO4J_*`、`ARM_DATA_DIR`、`ARM_SQLITE_PATH`、`ARM_EMBEDDING_*` 等。未配置 Qdrant/Neo4j 或服务不可达时，进程会退出并提示上述启动方法。
+
+服务启动后会同时：
+
+- 在控制台输出启动、依赖检查、WebSocket 请求、后台 outbox 重放等关键信息；
+- 将日志写入本地文件，默认路径为 `./data/arm_memory/logs/arm_memory.log`；
+- 底层日志实现使用 `loguru`，控制台输出更清晰，并支持文件轮转；
+- 支持通过 `ARM_LOG_LEVEL`、`ARM_LOG_DIR`、`ARM_LOG_PATH` 自定义日志级别与落盘位置。
 
 ---
 

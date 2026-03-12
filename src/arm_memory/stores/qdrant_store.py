@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 import httpx
+from loguru import logger
 
 from arm_memory.domain.models import MemoryTrace
-
-logger = logging.getLogger(__name__)
 
 
 class QdrantVectorStore:
@@ -29,7 +27,7 @@ class QdrantVectorStore:
                 response.raise_for_status()
             return True
         except Exception:
-            logger.warning("Failed to reach Qdrant", exc_info=True)
+            logger.exception("Failed to reach Qdrant")
             return False
 
     def ensure_collection(self, *, strict: bool = False) -> None:
@@ -54,7 +52,7 @@ class QdrantVectorStore:
         except Exception:
             if strict:
                 raise
-            logger.warning("Failed to ensure Qdrant collection", exc_info=True)
+            logger.exception("Failed to ensure Qdrant collection")
 
     def _handle_existing_collection(self, client: httpx.Client, *, strict: bool = False) -> None:
         try:
@@ -69,7 +67,7 @@ class QdrantVectorStore:
             )
         except Exception:
             logger.info(
-                "Qdrant collection '%s' already exists; skipped creation.",
+                "Qdrant collection '{}' already exists; skipped creation.",
                 self.collection,
             )
             return
@@ -80,8 +78,8 @@ class QdrantVectorStore:
         if actual_size == self.vector_size and actual_distance == expected_distance:
             logger.info(
                 (
-                    "Qdrant collection '%s' already exists with expected config "
-                    "(size=%s, distance=%s)."
+                    "Qdrant collection '{}' already exists with expected config "
+                    "(size={}, distance={})."
                 ),
                 self.collection,
                 actual_size,
@@ -91,8 +89,8 @@ class QdrantVectorStore:
 
         logger.warning(
             (
-                "Qdrant collection '%s' already exists but config differs: "
-                "expected size=%s distance=%s, got size=%s distance=%s"
+                "Qdrant collection '{}' already exists but config differs: "
+                "expected size={} distance={}, got size={} distance={}"
             ),
             self.collection,
             self.vector_size,
@@ -134,7 +132,7 @@ class QdrantVectorStore:
                 )
                 response.raise_for_status()
         except Exception:
-            logger.warning("Failed to upsert trace to Qdrant", exc_info=True)
+            logger.exception("Failed to upsert trace to Qdrant")
 
     def search(
         self,
@@ -166,7 +164,7 @@ class QdrantVectorStore:
                 response.raise_for_status()
                 result = response.json().get("result") or []
         except Exception:
-            logger.warning("Failed to search Qdrant", exc_info=True)
+            logger.exception("Failed to search Qdrant")
             return {}
 
         hits: dict[str, float] = {}
