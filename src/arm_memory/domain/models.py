@@ -191,18 +191,28 @@ class MemoryTrace:
     trace_id: str = field(default_factory=lambda: uuid4().hex)
     status: str = "active"
     salience: float = 0.5
+    decay_rate: float = 0.01
     access_count: int = 0
     source_turn_ids: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
     entities: list[str] = field(default_factory=list)
     vector: list[float] = field(default_factory=list)
     emotion: EmotionVector = field(default_factory=EmotionVector)
+    emotion_tag: EmotionLabel = field(default=EmotionLabel.NEUTRAL)
     sensitivity: SensitivityLevel = SensitivityLevel.PRIVATE
     created_at: datetime = field(default_factory=utcnow)
     updated_at: datetime = field(default_factory=utcnow)
     happened_at: datetime = field(default_factory=utcnow)
     last_accessed_at: datetime = field(default_factory=utcnow)
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        if len(self.tags) > 50:
+            self.tags = self.tags[:50]
+        if len(self.entities) > 50:
+            self.entities = self.entities[:50]
+        if len(self.source_turn_ids) > 50:
+            self.source_turn_ids = self.source_turn_ids[:50]
 
     def touch(self) -> None:
         self.access_count += 1
@@ -219,12 +229,14 @@ class MemoryTrace:
             "raw_text": self.raw_text,
             "status": self.status,
             "salience": self.salience,
+            "decay_rate": self.decay_rate,
             "access_count": self.access_count,
-            "source_turn_ids": self.source_turn_ids,
-            "tags": self.tags,
-            "entities": self.entities,
+            "source_turn_ids": self.source_turn_ids[:50],
+            "tags": self.tags[:50],
+            "entities": self.entities[:50],
             "vector": self.vector,
             "emotion": self.emotion.to_dict(),
+            "emotion_tag": self.emotion_tag.value,
             "sensitivity": self.sensitivity.value,
             "created_at": to_iso(self.created_at),
             "updated_at": to_iso(self.updated_at),
