@@ -327,20 +327,39 @@ class SleepCycleConsolidator:
             logger.exception("archive_stale_traces failed")
 
         try:
-            pairs = self.sqlite_store.find_similar_trace_pairs(
+            traces = self.sqlite_store.list_active_memory_traces(
                 project_id,
                 user_id,
-                similarity_threshold=self.config.memory_merge_similarity_threshold,
                 limit=self.config.retrieval_candidate_limit,
             )
             merged_ids: set[str] = set()
             merge_count = 0
-            for keep, discard, sim in pairs:
-                if keep.trace_id in merged_ids or discard.trace_id in merged_ids:
+            for keep in traces:
+                if keep.trace_id in merged_ids:
                     continue
-                self.sqlite_store.merge_trace_pair(keep, discard)
-                merged_ids.add(discard.trace_id)
-                merge_count += 1
+                if not keep.vector:
+                    continue
+                similar_trace_scores = self.vector_store.search(
+                    project_id=project_id,
+                    user_id=user_id,
+                    query_vector=keep.vector,
+                    limit=10,
+                )
+                for discard_id, sim in similar_trace_scores.items():
+                    if discard_id == keep.trace_id:
+                        continue
+                    if sim < self.config.memory_merge_similarity_threshold:
+                        continue
+                    if discard_id in merged_ids:
+                        continue
+                    discard_trace = self.sqlite_store.get_trace(discard_id)
+                    if not discard_trace or discard_trace.status != "active":
+                        continue
+                    # Keep the one that was created earlier (usually we keep older trace)
+                    # or keep has higher salience. We'll simply keep `keep` as logic did before
+                    self.sqlite_store.merge_trace_pair(keep, discard_trace)
+                    merged_ids.add(discard_id)
+                    merge_count += 1
             if merge_count:
                 result.notes.append(f"merged_traces={merge_count}")
         except Exception:

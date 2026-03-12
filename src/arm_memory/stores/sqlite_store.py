@@ -1364,34 +1364,6 @@ class SQLiteMemoryStore:
             )
         return archived
 
-    def find_similar_trace_pairs(
-        self,
-        project_id: str,
-        user_id: str,
-        *,
-        similarity_threshold: float = 0.85,
-        limit: int = 500,
-        conn: sqlite3.Connection | None = None,
-    ) -> list[tuple[MemoryTrace, MemoryTrace, float]]:
-        """Return pairs of active traces whose cosine similarity exceeds *similarity_threshold*."""
-        from arm_memory.utils import cosine_similarity as _cos_sim
-
-        traces = self.list_active_memory_traces(
-            project_id, user_id, limit=limit, conn=conn,
-        )
-        pairs: list[tuple[MemoryTrace, MemoryTrace, float]] = []
-        for i in range(len(traces)):
-            if not traces[i].vector:
-                continue
-            for j in range(i + 1, len(traces)):
-                if not traces[j].vector:
-                    continue
-                sim = _cos_sim(traces[i].vector, traces[j].vector)
-                if sim >= similarity_threshold:
-                    pairs.append((traces[i], traces[j], sim))
-        pairs.sort(key=lambda t: t[2], reverse=True)
-        return pairs
-
     def merge_trace_pair(
         self,
         keep: MemoryTrace,
