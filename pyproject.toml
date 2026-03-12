@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arm-memory-service"
+version = "0.1.0"
+description = "Adaptive relational memory service for AI companions"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "httpx",
+    "huggingface-hub",
+    "mlx",
+    "mlx-embeddings",
+    "pydantic>=2,<3",
+    "python-dotenv",
+    "uvicorn",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[project.scripts]
+arm-memory = "arm_memory.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
