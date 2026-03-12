@@ -253,11 +253,12 @@ class SQLiteMemoryStore:
                     error_message TEXT NOT NULL DEFAULT '',
                     attempts INTEGER NOT NULL DEFAULT 0,
                     status TEXT NOT NULL DEFAULT 'pending',
+                    next_attempt_at TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_remote_sync_outbox_lookup
-                    ON remote_sync_outbox(status, backend, updated_at);
+                    ON remote_sync_outbox(status, backend, next_attempt_at, updated_at);
                 """
             )
             self._ensure_column(
@@ -275,6 +276,12 @@ class SQLiteMemoryStore:
                 ("life_routines_json", "TEXT NOT NULL DEFAULT '[]'"),
             ):
                 self._ensure_column(conn, table="user_profiles", column=column[0], definition=column[1])
+            self._ensure_column(
+                conn,
+                table="remote_sync_outbox",
+                column="next_attempt_at",
+                definition="TEXT NOT NULL DEFAULT ''",
+            )
 
     def _ensure_column(
         self,
@@ -1115,17 +1122,19 @@ class SQLiteMemoryStore:
         project_id: str,
         user_id: str,
         payload: dict,
-        error_message: str,
+        error_message: str = "",
+        conn: sqlite3.Connection | None = None,
     ) -> str:
         now = to_iso(utcnow())
         task_id = uuid4().hex
-        with self._connect() as conn:
-            conn.execute(
+        context = nullcontext(conn) if conn is not None else self._connect()
+        with context as active_conn:
+            active_conn.execute(
                 """
                 INSERT INTO remote_sync_outbox (
                     task_id, backend, operation, project_id, user_id,
-                    payload_json, error_message, attempts, status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    payload_json, error_message, attempts, status, next_attempt_at, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     task_id,
@@ -1139,23 +1148,48 @@ class SQLiteMemoryStore:
                     "pending",
                     now,
                     now,
+                    now,
                 ),
             )
         return task_id
 
-    def claim_remote_sync_tasks(self, *, limit: int = 50) -> list[dict[str, object]]:
-        now = to_iso(utcnow())
+    def claim_remote_sync_tasks(
+        self,
+        *,
+        limit: int = 50,
+        max_attempts: int = 5,
+        reclaim_in_progress_after_seconds: int = 300,
+    ) -> list[dict[str, object]]:
+        now_dt = utcnow()
+        now = to_iso(now_dt)
+        reclaim_before = to_iso(now_dt - timedelta(seconds=max(1, reclaim_in_progress_after_seconds)))
         with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE remote_sync_outbox
+                SET status = 'failed',
+                    updated_at = ?,
+                    next_attempt_at = ?,
+                    error_message = CASE
+                        WHEN error_message = '' THEN 'task claim timeout, reset for retry'
+                        ELSE error_message
+                    END
+                WHERE status = 'in_progress'
+                  AND updated_at < ?
+                """,
+                (now, now, reclaim_before),
+            )
             rows = conn.execute(
                 """
                 SELECT *
                 FROM remote_sync_outbox
                 WHERE status IN ('pending', 'failed')
-                  AND attempts < 3
-                ORDER BY created_at ASC
+                  AND attempts < ?
+                  AND (next_attempt_at = '' OR next_attempt_at <= ?)
+                ORDER BY next_attempt_at ASC, created_at ASC
                 LIMIT ?
                 """,
-                (limit,),
+                (max_attempts, now, limit),
             ).fetchall()
             task_ids = [str(row["task_id"]) for row in rows]
             if task_ids:
@@ -1177,18 +1211,49 @@ class SQLiteMemoryStore:
                 (to_iso(utcnow()), task_id),
             )
 
-    def mark_remote_sync_task_failed(self, task_id: str, *, error_message: str) -> None:
+    def mark_remote_sync_task_failed(
+        self,
+        task_id: str,
+        *,
+        error_message: str,
+        max_attempts: int = 5,
+        retry_base_seconds: int = 5,
+        retry_max_seconds: int = 300,
+    ) -> None:
+        now_dt = utcnow()
+        now = to_iso(now_dt)
         with self._connect() as conn:
+            row = conn.execute(
+                "SELECT attempts FROM remote_sync_outbox WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            if row is None:
+                return
+            attempts = int(row["attempts"]) + 1
+            should_dead = attempts >= max(1, max_attempts)
+            delay_seconds = min(
+                max(0, retry_max_seconds),
+                max(0, retry_base_seconds) * (2 ** max(0, attempts - 1)),
+            )
+            next_attempt_at = to_iso(now_dt + timedelta(seconds=delay_seconds))
             conn.execute(
                 """
                 UPDATE remote_sync_outbox
-                SET status = 'failed',
-                    attempts = attempts + 1,
+                SET status = ?,
+                    attempts = ?,
                     error_message = ?,
+                    next_attempt_at = ?,
                     updated_at = ?
                 WHERE task_id = ?
                 """,
-                (error_message, to_iso(utcnow()), task_id),
+                (
+                    "dead" if should_dead else "failed",
+                    attempts,
+                    error_message,
+                    next_attempt_at,
+                    now,
+                    task_id,
+                ),
             )
 
     def get_remote_sync_outbox_summary(self) -> dict[str, int]:
@@ -1206,6 +1271,7 @@ class SQLiteMemoryStore:
             "failed": summary.get("failed", 0),
             "in_progress": summary.get("in_progress", 0),
             "done": summary.get("done", 0),
+            "dead": summary.get("dead", 0),
         }
 
     def _row_to_remote_sync_task(self, row: sqlite3.Row) -> dict[str, object]:
@@ -1219,6 +1285,7 @@ class SQLiteMemoryStore:
             "error_message": row["error_message"],
             "attempts": int(row["attempts"]),
             "status": row["status"],
+            "next_attempt_at": row["next_attempt_at"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }

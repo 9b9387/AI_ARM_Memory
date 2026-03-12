@@ -15,13 +15,20 @@ def test_remote_sync_outbox_stops_claiming_after_three_failures(tmp_path):
     )
 
     for attempt in range(3):
-        claimed = store.claim_remote_sync_tasks(limit=10)
+        claimed = store.claim_remote_sync_tasks(limit=10, max_attempts=3)
         assert [item["task_id"] for item in claimed] == [task_id]
-        store.mark_remote_sync_task_failed(task_id, error_message=f"attempt-{attempt}")
+        store.mark_remote_sync_task_failed(
+            task_id,
+            error_message=f"attempt-{attempt}",
+            max_attempts=3,
+            retry_base_seconds=0,
+            retry_max_seconds=0,
+        )
 
-    assert store.claim_remote_sync_tasks(limit=10) == []
+    assert store.claim_remote_sync_tasks(limit=10, max_attempts=3) == []
     summary = store.get_remote_sync_outbox_summary()
-    assert summary["failed"] == 1
+    assert summary["failed"] == 0
+    assert summary["dead"] == 1
     assert summary["pending"] == 0
 
 

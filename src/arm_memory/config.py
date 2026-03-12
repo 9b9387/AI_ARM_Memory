@@ -75,6 +75,12 @@ class ARMConfig:
     service_host: str = "127.0.0.1"
     service_port: int = 8788
     service_ws_path: str = "/ws"
+    outbox_max_attempts: int = 5
+    outbox_retry_base_seconds: int = 5
+    outbox_retry_max_seconds: int = 300
+    outbox_reclaim_in_progress_after_seconds: int = 300
+    outbox_replay_interval_seconds: int = 60
+    outbox_replay_limit: int = 50
     require_qdrant: bool = True
     require_neo4j: bool = True
 
@@ -143,6 +149,14 @@ class ARMConfig:
             service_host=os.getenv("ARM_SERVICE_HOST", "127.0.0.1"),
             service_port=int(os.getenv("ARM_SERVICE_PORT", "8788")),
             service_ws_path=os.getenv("ARM_SERVICE_WS_PATH", "/ws"),
+            outbox_max_attempts=int(os.getenv("ARM_OUTBOX_MAX_ATTEMPTS", "5")),
+            outbox_retry_base_seconds=int(os.getenv("ARM_OUTBOX_RETRY_BASE_SECONDS", "5")),
+            outbox_retry_max_seconds=int(os.getenv("ARM_OUTBOX_RETRY_MAX_SECONDS", "300")),
+            outbox_reclaim_in_progress_after_seconds=int(
+                os.getenv("ARM_OUTBOX_RECLAIM_IN_PROGRESS_AFTER_SECONDS", "300")
+            ),
+            outbox_replay_interval_seconds=int(os.getenv("ARM_OUTBOX_REPLAY_INTERVAL_SECONDS", "60")),
+            outbox_replay_limit=int(os.getenv("ARM_OUTBOX_REPLAY_LIMIT", "50")),
             require_qdrant=True,
             require_neo4j=True,
         )
@@ -202,6 +216,15 @@ class ARMConfig:
                 "[Service] "
                 f"host={self.service_host} port={self.service_port} ws_path={self.service_ws_path} "
                 f"require_qdrant={self.require_qdrant} require_neo4j={self.require_neo4j}"
+            ),
+            (
+                "[Outbox] "
+                f"max_attempts={self.outbox_max_attempts} "
+                f"retry_base_s={self.outbox_retry_base_seconds} "
+                f"retry_max_s={self.outbox_retry_max_seconds} "
+                f"reclaim_in_progress_after_s={self.outbox_reclaim_in_progress_after_seconds} "
+                f"replay_interval_s={self.outbox_replay_interval_seconds} "
+                f"replay_limit={self.outbox_replay_limit}"
             ),
             f"[Qdrant] enabled={self.qdrant_enabled} url={self.qdrant_url or '(disabled)'} collection={self.qdrant_collection}",
             (
