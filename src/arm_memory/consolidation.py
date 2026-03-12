@@ -163,6 +163,7 @@ class SleepCycleConsolidator:
         qdrant_traces: list[MemoryTrace] = []
         neo4j_facts: list[SemanticFact] = []
         neo4j_edges: list[GraphEdge] = []
+        remote_sync_enqueued = 0
         with self.sqlite_store.transaction() as conn:
             for item in extraction.get("episodic", []):
                 trace = self._trace_from_extracted_item(
@@ -250,67 +251,59 @@ class SleepCycleConsolidator:
             if turn_ids:
                 self.sqlite_store.mark_turns_consolidated(turn_ids, conn=conn)
 
-        result.user_manual_updated = True
-        result.triggered_procedures = list(extraction.get("procedures") or [])
-        if extraction.get("safety_flags"):
-            result.notes.append("Safety flags: " + ", ".join(extraction["safety_flags"]))
+            if self.qdrant_store and self.qdrant_store.enabled:
+                for trace in qdrant_traces:
+                    self.sqlite_store.enqueue_remote_sync_task(
+                        backend="qdrant",
+                        operation="upsert_trace",
+                        project_id=project_id,
+                        user_id=user_id,
+                        payload=trace.to_dict(),
+                        error_message="queued_for_async_dispatch",
+                        conn=conn,
+                    )
+                    remote_sync_enqueued += 1
 
-        for trace in qdrant_traces:
-            if not self.qdrant_store:
-                break
-            try:
-                self.qdrant_store.upsert_trace(trace)
-            except Exception as exc:
-                self.sqlite_store.enqueue_remote_sync_task(
-                    backend="qdrant",
-                    operation="upsert_trace",
-                    project_id=project_id,
-                    user_id=user_id,
-                    payload=trace.to_dict(),
-                    error_message=str(exc),
-                )
-
-        if self.neo4j_store:
-            for fact in neo4j_facts:
-                try:
-                    self.neo4j_store.sync_fact(fact)
-                except Exception as exc:
+            if self.neo4j_store and self.neo4j_store.enabled:
+                for fact in neo4j_facts:
                     self.sqlite_store.enqueue_remote_sync_task(
                         backend="neo4j",
                         operation="sync_fact",
                         project_id=project_id,
                         user_id=user_id,
                         payload=fact.to_dict(),
-                        error_message=str(exc),
+                        error_message="queued_for_async_dispatch",
+                        conn=conn,
                     )
-            for edge in neo4j_edges:
-                try:
-                    self.neo4j_store.sync_edge(edge)
-                except Exception as exc:
+                    remote_sync_enqueued += 1
+                for edge in neo4j_edges:
                     self.sqlite_store.enqueue_remote_sync_task(
                         backend="neo4j",
                         operation="sync_edge",
                         project_id=project_id,
                         user_id=user_id,
                         payload=edge.to_dict(),
-                        error_message=str(exc),
+                        error_message="queued_for_async_dispatch",
+                        conn=conn,
                     )
-            try:
-                self.neo4j_store.sync_relationship_state(
-                    project_id=project_id,
-                    user_id=user_id,
-                    companion_node=self.config.companion_node_name,
-                    state=relationship_state,
-                )
-            except Exception as exc:
+                    remote_sync_enqueued += 1
                 self.sqlite_store.enqueue_remote_sync_task(
                     backend="neo4j",
                     operation="sync_relationship_state",
                     project_id=project_id,
                     user_id=user_id,
                     payload=relationship_state.to_dict(),
-                    error_message=str(exc),
+                    error_message="queued_for_async_dispatch",
+                    conn=conn,
                 )
+                remote_sync_enqueued += 1
+
+        result.user_manual_updated = True
+        result.triggered_procedures = list(extraction.get("procedures") or [])
+        if remote_sync_enqueued:
+            result.notes.append(f"remote_sync_enqueued={remote_sync_enqueued}")
+        if extraction.get("safety_flags"):
+            result.notes.append("Safety flags: " + ", ".join(extraction["safety_flags"]))
 
         # ------------------------------------------------------------------
         # Post-consolidation: archive stale traces & merge similar ones
@@ -339,7 +332,9 @@ class SleepCycleConsolidator:
                     continue
                 if not keep.vector:
                     continue
-                similar_trace_scores = self.vector_store.search(
+                if not self.qdrant_store or not self.qdrant_store.enabled:
+                    continue
+                similar_trace_scores = self.qdrant_store.search(
                     project_id=project_id,
                     user_id=user_id,
                     query_vector=keep.vector,
