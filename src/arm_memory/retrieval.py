@@ -42,58 +42,82 @@ class HybridRetrievalEngine:
         t0 = time.monotonic()
         limit = top_k or self.config.retrieval_top_k
         candidate_limit = self.config.retrieval_candidate_limit
-        traces = self.sqlite_store.list_active_memory_traces(
-            project_id,
-            user_id,
-            kinds=[MemoryKind.EPISODIC, MemoryKind.SEMANTIC],
-            limit=candidate_limit,
-        )
-        if not traces:
-            return []
 
         query_vector = self.vectorizer.embed(query)
         query_tokens = self.vectorizer.tokenize(query)
+
+        # 1. Query graph_store (and sqlite_store) to get related entities/nodes
+        # Note: Currently these return dict[str, float] mapping *entity* to score.
+        # If your graph store is modified to return trace_ids, it will be included in graph_boosts.
         related_nodes = self.sqlite_store.list_related_nodes(
             project_id,
             user_id,
             query_tokens,
             limit=32,
         )
+        graph_boosts: dict[str, float] = {}
         if self.neo4j_store and self.neo4j_store.enabled:
-            for key, value in self.neo4j_store.search_related(
+            graph_boosts = self.neo4j_store.search_related(
                 project_id=project_id,
                 user_id=user_id,
                 entities=query_tokens,
                 limit=16,
-            ).items():
+            )
+            # Combine graph entity boosts into related_nodes for scoring
+            for key, value in graph_boosts.items():
                 related_nodes[key] = max(related_nodes.get(key, 0.0), value)
 
-        qdrant_scores: dict[str, float] = {}
+        # 2. Query vector_store to get vector_boosts (dict of trace_id -> score)
+        vector_boosts: dict[str, float] = {}
         if self.qdrant_store and self.qdrant_store.enabled:
-            qdrant_scores = self.qdrant_store.search(
+            vector_boosts = self.qdrant_store.search(
                 project_id=project_id,
                 user_id=user_id,
                 query_vector=query_vector,
                 limit=max(limit * self.config.retrieval_qdrant_prefetch_factor, 8),
             )
 
+        # 3. Combine IDs (from graph and vector) 
+        # (Assuming graph_boosts might contain trace_ids as per requirements, 
+        # though currently it returns entity strings)
+        combined_ids = set(vector_boosts.keys()) | set(graph_boosts.keys())
+        
+        # 4. Filter and fetch MemoryTrace objects
+        traces: list[MemoryTrace] = []
+        if combined_ids:
+            # Pass these IDs to get_traces_by_ids (top N combined limit if needed)
+            id_list = list(combined_ids)[:candidate_limit]
+            traces = self.sqlite_store.get_traces_by_ids(id_list)
+        
+        # Fallback if no vector/graph stores provided or no hits: generic recent/salient fetch
+        if not traces:
+            traces = self.sqlite_store.list_active_memory_traces(
+                project_id,
+                user_id,
+                kinds=[MemoryKind.EPISODIC, MemoryKind.SEMANTIC],
+                limit=candidate_limit,
+            )
+
+        if not traces:
+            return []
+
+        # 5. Score and filter the traces
         scored: list[RetrievalHit] = []
-        qdrant_candidate_ids = set(qdrant_scores.keys()) if qdrant_scores else set()
+        qdrant_candidate_ids = set(vector_boosts.keys()) if vector_boosts else set()
+        
         for trace in traces:
-            # Pre-filter: if Qdrant returned candidates, fast-skip traces not in
-            # Qdrant results and with no entity overlap with query tokens.
+            # Fast-skip traces not in vector results if vector hits exist and no entity overlap
             if qdrant_candidate_ids and trace.trace_id not in qdrant_candidate_ids:
                 trace_entity_set = {normalize_text(e) for e in trace.entities}
                 query_token_set = {normalize_text(t) for t in query_tokens}
                 if not (trace_entity_set & query_token_set):
-                    # Check related_nodes overlap before skipping
                     has_graph_hit = any(
                         normalize_text(e) in related_nodes for e in trace.entities
                     )
                     if not has_graph_hit:
                         continue
 
-            breakdown = self._score_trace(trace, query_tokens, query_vector, related_nodes, qdrant_scores)
+            breakdown = self._score_trace(trace, query_tokens, query_vector, related_nodes, vector_boosts)
             total = breakdown.pop("total")
             if total <= 0:
                 continue
