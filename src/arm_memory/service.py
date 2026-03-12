@@ -444,7 +444,11 @@ class ARMMemoryService:
         logger.warning("User data cleared: project_id={} user_id={}", project_id, user_id)
 
     def replay_remote_sync_outbox(self, *, limit: int = 50) -> dict[str, int]:
-        tasks = self.sqlite_store.claim_remote_sync_tasks(limit=limit)
+        tasks = self.sqlite_store.claim_remote_sync_tasks(
+            limit=limit,
+            max_attempts=self.config.outbox_max_attempts,
+            reclaim_in_progress_after_seconds=self.config.outbox_reclaim_in_progress_after_seconds,
+        )
         result = {"processed": 0, "succeeded": 0, "failed": 0}
         for task in tasks:
             result["processed"] += 1
@@ -452,7 +456,13 @@ class ARMMemoryService:
             try:
                 self._replay_remote_sync_task(task)
             except Exception as exc:
-                self.sqlite_store.mark_remote_sync_task_failed(task_id, error_message=str(exc))
+                self.sqlite_store.mark_remote_sync_task_failed(
+                    task_id,
+                    error_message=str(exc),
+                    max_attempts=self.config.outbox_max_attempts,
+                    retry_base_seconds=self.config.outbox_retry_base_seconds,
+                    retry_max_seconds=self.config.outbox_retry_max_seconds,
+                )
                 result["failed"] += 1
                 logger.warning(
                     "Remote sync replay failed: task_id={} backend={} operation={} error={}",

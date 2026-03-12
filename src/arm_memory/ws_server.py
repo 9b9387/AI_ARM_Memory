@@ -11,8 +11,6 @@ from arm_memory.domain.models import SensitivityLevel, persona_from_dict, relati
 from arm_memory.logging_config import setup_logging
 from arm_memory.protocol import ARMError, ARMEvent, ARMRequest, ARMResponse
 from arm_memory.service import ARMMemoryService
-_OUTBOX_REPLAY_INTERVAL_SECONDS = 60
-_OUTBOX_REPLAY_LIMIT = 50
 
 
 class ARMWebSocketSession:
@@ -301,16 +299,18 @@ async def _run_outbox_consumer(
     service: ARMMemoryService,
     stop_event: asyncio.Event,
 ) -> None:
+    replay_interval_seconds = max(1, service.config.outbox_replay_interval_seconds)
+    replay_limit = max(1, service.config.outbox_replay_limit)
     logger.info(
         "ARM outbox replay loop started: interval_seconds={} limit={}",
-        _OUTBOX_REPLAY_INTERVAL_SECONDS,
-        _OUTBOX_REPLAY_LIMIT,
+        replay_interval_seconds,
+        replay_limit,
     )
     while not stop_event.is_set():
         try:
             result = await asyncio.to_thread(
                 service.replay_remote_sync_outbox,
-                limit=_OUTBOX_REPLAY_LIMIT,
+                limit=replay_limit,
             )
             if any(result.values()):
                 logger.info("ARM outbox replay result: {}", result)
@@ -325,7 +325,7 @@ async def _run_outbox_consumer(
         try:
             await asyncio.wait_for(
                 stop_event.wait(),
-                timeout=_OUTBOX_REPLAY_INTERVAL_SECONDS,
+                timeout=replay_interval_seconds,
             )
         except asyncio.TimeoutError:
             continue
