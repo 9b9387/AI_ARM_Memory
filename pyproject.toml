@@ -14,8 +14,10 @@ dependencies = [
     "loguru",
     "mlx",
     "mlx-embeddings",
+    "neo4j>=5.14.0",
     "pydantic>=2,<3",
     "python-dotenv",
+    "qdrant-client>=1.7.0",
     "uvicorn",
 ]
 
