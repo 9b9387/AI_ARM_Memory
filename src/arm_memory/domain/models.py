@@ -661,6 +661,7 @@ class BuildContextResult:
     user_manual_summary: str = ""
     top_memories: list[RetrievalHit] = field(default_factory=list)
     triggered_procedures: list[ProcedureRule] = field(default_factory=list)
+    prompt_sections_capped: list[str] | None = None
 
     def prompt_sections(self) -> list[str]:
         sections: list[str] = []
@@ -683,14 +684,35 @@ class BuildContextResult:
             sections.append(f"[响应策略]\n{policy_text}")
         return sections
 
+    def prompt_sections_with_budget(self, max_tokens: int) -> list[str]:
+        from arm_memory.utils import estimate_tokens
+
+        all_sections = self.prompt_sections()
+        result: list[str] = []
+        used = 0
+        for section in all_sections:
+            cost = estimate_tokens(section)
+            if used + cost > max_tokens:
+                remaining = max_tokens - used
+                if remaining > 20:
+                    truncated = section[: remaining * 2]
+                    result.append(truncated)
+                break
+            result.append(section)
+            used += cost
+        return result
+
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "persona_prompt": self.persona_prompt,
             "relationship_prompt": self.relationship_prompt,
             "user_manual_summary": self.user_manual_summary,
             "top_memories": [item.to_dict() for item in self.top_memories],
             "triggered_procedures": [item.to_dict() for item in self.triggered_procedures],
         }
+        if self.prompt_sections_capped is not None:
+            d["prompt_sections"] = self.prompt_sections_capped
+        return d
 
 
 @dataclass(slots=True)

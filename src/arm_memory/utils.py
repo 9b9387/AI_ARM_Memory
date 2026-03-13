@@ -117,3 +117,15 @@ def normalize_text(value: str) -> str:
     lowered = value.lower()
     lowered = re.sub(r"\s+", " ", lowered)
     return lowered.strip()
+
+
+_CJK_RANGE = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]")
+
+
+def estimate_tokens(text: str) -> int:
+    """Rough token count: ~1.5 chars/token for CJK, ~4 chars/token for Latin."""
+    if not text:
+        return 0
+    cjk_chars = len(_CJK_RANGE.findall(text))
+    other_chars = len(text) - cjk_chars
+    return int(cjk_chars / 1.5 + other_chars / 4) + 1

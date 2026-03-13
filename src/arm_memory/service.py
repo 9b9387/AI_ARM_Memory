@@ -96,6 +96,7 @@ class ARMMemoryService:
         user_id: str,
         message: str,
         user_emotion_hint: EmotionVector | dict | None = None,
+        max_context_tokens: int | None = None,
     ) -> BuildContextResult:
         logger.info(
             "Building context: project_id={} user_id={} message_length={}",
@@ -145,6 +146,8 @@ class ARMMemoryService:
             top_memories=hits,
             triggered_procedures=procedures,
         )
+        if max_context_tokens is not None and max_context_tokens > 0:
+            result.prompt_sections_capped = result.prompt_sections_with_budget(max_context_tokens)
         logger.info(
             "Context built: project_id={} user_id={} hits={} procedures={}",
             project_id,
