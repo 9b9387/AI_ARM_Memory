@@ -211,13 +211,16 @@ class HybridRetrievalEngine:
     def _temporal_decay(self, trace: MemoryTrace, now: datetime) -> float:
         age_seconds = max((now - trace.last_accessed_at).total_seconds(), 0.0)
         age_hours = age_seconds / 3600.0
-        half_life = (
+        base_half_life = (
             self.config.semantic_half_life_hours
             if trace.kind == MemoryKind.SEMANTIC
             else self.config.episodic_half_life_hours
         )
-        if half_life <= 0:
+        if base_half_life <= 0:
             return 1.0
+        half_life = base_half_life * (
+            1.0 + self.config.half_life_access_boost_factor * math.log1p(max(0, trace.access_count))
+        )
         decay = math.exp(-(math.log(2) / half_life) * age_hours)
         floor = 0.45 if trace.kind == MemoryKind.SEMANTIC else 0.08
         return max(decay, floor)

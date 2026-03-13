@@ -61,6 +61,7 @@ class ARMConfig:
     profile_item_stale_days: int = 180
     episodic_half_life_hours: int = 168
     semantic_half_life_hours: int = 2160
+    half_life_access_boost_factor: float = 0.5
     reconsolidation_boost: float = 1.15
     retrieval_weight_semantic: float = 0.40
     retrieval_weight_lexical: float = 0.15
@@ -141,6 +142,7 @@ class ARMConfig:
             profile_item_stale_days=int(os.getenv("ARM_PROFILE_ITEM_STALE_DAYS", "180")),
             episodic_half_life_hours=int(os.getenv("ARM_EPISODIC_HALF_LIFE_HOURS", "168")),
             semantic_half_life_hours=int(os.getenv("ARM_SEMANTIC_HALF_LIFE_HOURS", "2160")),
+            half_life_access_boost_factor=float(os.getenv("ARM_HALF_LIFE_ACCESS_BOOST_FACTOR", "0.5")),
             reconsolidation_boost=float(os.getenv("ARM_RECONSOLIDATION_BOOST", "1.15")),
             retrieval_weight_semantic=float(os.getenv("ARM_RETRIEVAL_WEIGHT_SEMANTIC", "0.40")),
             retrieval_weight_lexical=float(os.getenv("ARM_RETRIEVAL_WEIGHT_LEXICAL", "0.15")),
