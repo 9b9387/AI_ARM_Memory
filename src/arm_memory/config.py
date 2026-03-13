@@ -57,6 +57,7 @@ class ARMConfig:
     embedding_max_length: int = 512
     embedding_model_path: str = ""
     embedding_cache_dir: str = ""
+    profile_conflict_pairs_path: str = ""
     profile_item_limit_per_facet: int = 24
     profile_item_stale_days: int = 180
     episodic_half_life_hours: int = 168
@@ -140,6 +141,7 @@ class ARMConfig:
                 (os.getenv("ARM_EMBEDDING_CACHE_DIR") or "").strip()
                 or str((data_dir / "embedding_cache").resolve())
             ),
+            profile_conflict_pairs_path=(os.getenv("ARM_PROFILE_CONFLICT_PAIRS_PATH") or "").strip(),
             profile_item_limit_per_facet=int(os.getenv("ARM_PROFILE_ITEM_LIMIT_PER_FACET", "24")),
             profile_item_stale_days=int(os.getenv("ARM_PROFILE_ITEM_STALE_DAYS", "180")),
             episodic_half_life_hours=int(os.getenv("ARM_EPISODIC_HALF_LIFE_HOURS", "168")),

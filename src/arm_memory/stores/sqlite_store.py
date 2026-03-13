@@ -709,6 +709,31 @@ class SQLiteMemoryStore:
         }
         return profile_from_dict(payload)
 
+    def mark_profile_item_superseded(
+        self,
+        project_id: str,
+        user_id: str,
+        facet_type: str,
+        normalized_value: str,
+        *,
+        replaced_by: str = "",
+        conn: sqlite3.Connection | None = None,
+    ) -> int:
+        now = to_iso(utcnow())
+        metadata_patch = dumps_json({"superseded_at": now, "replaced_by": replaced_by})
+        context = nullcontext(conn) if conn is not None else self._connect()
+        with context as active_conn:
+            cur = active_conn.execute(
+                """
+                UPDATE profile_items
+                SET status = 'superseded', metadata_json = ?
+                WHERE project_id = ? AND user_id = ? AND facet_type = ?
+                  AND normalized_value = ? AND status = 'active'
+                """,
+                (metadata_patch, project_id, user_id, facet_type, normalized_value),
+            )
+            return cur.rowcount
+
     def save_profile_item(
         self,
         item: UserProfileItem,

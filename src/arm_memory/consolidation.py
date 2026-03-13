@@ -158,8 +158,37 @@ class SleepCycleConsolidator:
         self.vectorizer = vectorizer
         self.qdrant_store = qdrant_store
         self.neo4j_store = neo4j_store
+        self._conflict_pairs = self._load_conflict_pairs()
         if self.qdrant_store:
             self.qdrant_store.ensure_collection()
+
+    def _load_conflict_pairs(self) -> dict[str, list[set[str]]]:
+        import json
+        path = self.config.profile_conflict_pairs_path
+        if not path:
+            return {}
+        from pathlib import Path
+        p = Path(path)
+        if not p.exists():
+            return {}
+        try:
+            raw = json.loads(p.read_text(encoding="utf-8"))
+            result: dict[str, list[set[str]]] = {}
+            for facet_key, pairs in raw.items():
+                result[facet_key] = [set(normalize_text(v) for v in pair) for pair in pairs]
+            return result
+        except Exception:
+            logger.warning("Failed to load conflict pairs from {}", path)
+            return {}
+
+    def _find_conflicting_values(self, facet_type: str, new_value: str) -> list[str]:
+        pairs = self._conflict_pairs.get(facet_type, [])
+        norm = normalize_text(new_value)
+        conflicts: list[str] = []
+        for pair in pairs:
+            if norm in pair:
+                conflicts.extend(v for v in pair if v != norm)
+        return conflicts
 
     def apply_extraction(
         self,
@@ -248,6 +277,17 @@ class SleepCycleConsolidator:
             )
             self.sqlite_store.save_profile(profile, conn=conn)
             for item in profile_items:
+                if self._conflict_pairs:
+                    conflicting = self._find_conflicting_values(item.facet_type.value, item.value)
+                    for cv in conflicting:
+                        self.sqlite_store.mark_profile_item_superseded(
+                            item.project_id,
+                            item.user_id,
+                            item.facet_type.value,
+                            cv,
+                            replaced_by=item.value,
+                            conn=conn,
+                        )
                 self.sqlite_store.save_profile_item(
                     item,
                     conn=conn,

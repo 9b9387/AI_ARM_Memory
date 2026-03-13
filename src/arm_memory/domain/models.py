@@ -92,10 +92,11 @@ class ProfileFacetType(StrEnum):
 
 
 class ProfileItemStatus(StrEnum):
-    """档案项状态：活跃、已归档、已删除。"""
+    """档案项状态：活跃、已归档、已替代、已删除。"""
 
     ACTIVE = "active"
     ARCHIVED = "archived"
+    SUPERSEDED = "superseded"
     DELETED = "deleted"
 
 
