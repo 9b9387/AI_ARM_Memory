@@ -140,10 +140,23 @@ class ARMMemoryService:
                 )
                 self.sqlite_store.save_user_manual(snapshot)
 
+        retrieval_query = message
+        expand_n = self.config.retrieval_query_expand_turns
+        if expand_n > 0:
+            recent = self.sqlite_store.list_recent_turns(
+                project_id, user_id, limit=expand_n
+            )
+            if recent:
+                context_text = " ".join(t.content for t in recent[-expand_n:])
+                retrieval_query = message + " " + context_text
+                max_chars = self.config.embedding_max_length * 3
+                if len(retrieval_query) > max_chars:
+                    retrieval_query = retrieval_query[-max_chars:]
+
         hits = self.retrieval_engine.retrieve(
             project_id=project_id,
             user_id=user_id,
-            query=message,
+            query=retrieval_query,
             query_emotion_hint=emotion_hint,
         )
         for hit in hits:

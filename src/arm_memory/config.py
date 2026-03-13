@@ -67,6 +67,7 @@ class ARMConfig:
     retrieval_weight_salience: float = 0.15
     retrieval_weight_remote: float = 0.10
     retrieval_weight_emotion: float = 0.10
+    retrieval_query_expand_turns: int = 0
     retrieval_candidate_limit: int = 300
     retrieval_qdrant_prefetch_factor: int = 2
     memory_archive_min_age_days: int = 90
@@ -145,6 +146,7 @@ class ARMConfig:
             retrieval_weight_salience=float(os.getenv("ARM_RETRIEVAL_WEIGHT_SALIENCE", "0.15")),
             retrieval_weight_remote=float(os.getenv("ARM_RETRIEVAL_WEIGHT_REMOTE", "0.10")),
             retrieval_weight_emotion=float(os.getenv("ARM_RETRIEVAL_WEIGHT_EMOTION", "0.10")),
+            retrieval_query_expand_turns=int(os.getenv("ARM_RETRIEVAL_QUERY_EXPAND_TURNS", "0")),
             retrieval_candidate_limit=int(os.getenv("ARM_RETRIEVAL_CANDIDATE_LIMIT", "300")),
             retrieval_qdrant_prefetch_factor=int(os.getenv("ARM_RETRIEVAL_QDRANT_PREFETCH_FACTOR", "2")),
             memory_archive_min_age_days=int(os.getenv("ARM_MEMORY_ARCHIVE_MIN_AGE_DAYS", "90")),
