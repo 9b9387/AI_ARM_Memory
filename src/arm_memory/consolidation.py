@@ -123,6 +123,24 @@ class ConsolidationRelationshipPayload(_ConsolidationBaseModel):
     )
 
 
+_EMOTION_OPPOSITES: set[frozenset[EmotionLabel]] = {
+    frozenset({EmotionLabel.JOY, EmotionLabel.SADNESS}),
+    frozenset({EmotionLabel.TRUST, EmotionLabel.DISGUST}),
+    frozenset({EmotionLabel.FEAR, EmotionLabel.ANGER}),
+    frozenset({EmotionLabel.SURPRISE, EmotionLabel.ANTICIPATION}),
+}
+
+
+def _emotion_contradicts(a: MemoryTrace, b: MemoryTrace) -> bool:
+    """Return True when two traces have opposing emotional polarity."""
+    if frozenset({a.emotion_tag, b.emotion_tag}) in _EMOTION_OPPOSITES:
+        return True
+    va, vb = a.emotion.valence, b.emotion.valence
+    if va * vb < 0 and abs(va) > 0.3 and abs(vb) > 0.3:
+        return True
+    return False
+
+
 class SleepCycleConsolidator:
     """仅负责将外部提供的结构化抽取结果写入存储，不执行对话→抽取。"""
 
@@ -350,8 +368,8 @@ class SleepCycleConsolidator:
                     discard_trace = self.sqlite_store.get_trace(discard_id)
                     if not discard_trace or discard_trace.status != "active":
                         continue
-                    # Keep the one that was created earlier (usually we keep older trace)
-                    # or keep has higher salience. We'll simply keep `keep` as logic did before
+                    if self.config.memory_merge_skip_emotion_contradiction and _emotion_contradicts(keep, discard_trace):
+                        continue
                     self.sqlite_store.merge_trace_pair(keep, discard_trace)
                     merged_ids.add(discard_id)
                     merge_count += 1
