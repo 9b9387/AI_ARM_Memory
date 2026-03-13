@@ -95,6 +95,7 @@ class ARMMemoryService:
         project_id: str,
         user_id: str,
         message: str,
+        user_emotion_hint: EmotionVector | dict | None = None,
     ) -> BuildContextResult:
         logger.info(
             "Building context: project_id={} user_id={} message_length={}",
@@ -102,6 +103,12 @@ class ARMMemoryService:
             user_id,
             len(message),
         )
+        emotion_hint: EmotionVector | None = None
+        if isinstance(user_emotion_hint, dict):
+            emotion_hint = EmotionVector.from_dict(user_emotion_hint)
+        elif isinstance(user_emotion_hint, EmotionVector):
+            emotion_hint = user_emotion_hint
+
         persona_prompt = self.load_persona_prompt(project_id=project_id, user_id=user_id)
         relationship = self.sqlite_store.load_relationship_state(project_id, user_id)
         snapshot = self.sqlite_store.load_user_manual(project_id, user_id)
@@ -117,6 +124,7 @@ class ARMMemoryService:
             project_id=project_id,
             user_id=user_id,
             query=message,
+            query_emotion_hint=emotion_hint,
         )
         for hit in hits:
             self.sqlite_store.record_memory_access(

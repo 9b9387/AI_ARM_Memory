@@ -7,7 +7,7 @@ from datetime import datetime
 from loguru import logger
 
 from arm_memory.config import ARMConfig
-from arm_memory.domain.models import MemoryKind, MemoryTrace, RetrievalHit
+from arm_memory.domain.models import EmotionVector, MemoryKind, MemoryTrace, RetrievalHit
 from arm_memory.stores.neo4j_store import Neo4jGraphStore
 from arm_memory.stores.qdrant_store import QdrantVectorStore
 from arm_memory.stores.sqlite_store import SQLiteMemoryStore
@@ -38,6 +38,7 @@ class HybridRetrievalEngine:
         user_id: str,
         query: str,
         top_k: int | None = None,
+        query_emotion_hint: EmotionVector | None = None,
     ) -> list[RetrievalHit]:
         t0 = time.monotonic()
         limit = top_k or self.config.retrieval_top_k
@@ -117,7 +118,7 @@ class HybridRetrievalEngine:
                     if not has_graph_hit:
                         continue
 
-            breakdown = self._score_trace(trace, query_tokens, query_vector, related_nodes, vector_boosts)
+            breakdown = self._score_trace(trace, query_tokens, query_vector, related_nodes, vector_boosts, query_emotion_hint)
             total = breakdown.pop("total")
             if total <= 0:
                 continue
@@ -151,6 +152,7 @@ class HybridRetrievalEngine:
         query_vector: list[float],
         related_nodes: dict[str, float],
         qdrant_scores: dict[str, float],
+        query_emotion_hint: EmotionVector | None = None,
     ) -> dict[str, float]:
         trace_tokens = self.vectorizer.tokenize(" ".join([trace.summary, trace.raw_text, *trace.entities, *trace.tags]))
         lexical = self._token_overlap(query_tokens, trace_tokens)
@@ -174,12 +176,15 @@ class HybridRetrievalEngine:
         )
         remote_boost = qdrant_scores.get(trace.trace_id, 0.0)
 
+        emotion_similarity = self._emotion_similarity(trace.emotion, query_emotion_hint)
+
         total = (
             semantic_similarity * self.config.retrieval_weight_semantic
             + lexical * self.config.retrieval_weight_lexical
             + graph_proximity * self.config.retrieval_weight_graph
             + attentional_weight * self.config.retrieval_weight_salience
             + remote_boost * self.config.retrieval_weight_remote
+            + emotion_similarity * self.config.retrieval_weight_emotion
         ) * temporal_decay * access_boost
         total = clamp(total, 0.0, 10.0)
         return {
@@ -190,6 +195,7 @@ class HybridRetrievalEngine:
             "temporal_decay": temporal_decay,
             "access_boost": access_boost,
             "remote_boost": remote_boost,
+            "emotion_similarity": emotion_similarity,
             "total": total,
         }
 
@@ -206,6 +212,14 @@ class HybridRetrievalEngine:
         decay = math.exp(-(math.log(2) / half_life) * age_hours)
         floor = 0.45 if trace.kind == MemoryKind.SEMANTIC else 0.08
         return max(decay, floor)
+
+    @staticmethod
+    def _emotion_similarity(trace_emotion: EmotionVector, hint: EmotionVector | None) -> float:
+        if hint is None:
+            return 0.5
+        val_diff = abs(trace_emotion.valence - hint.valence)
+        aro_diff = abs(trace_emotion.arousal - hint.arousal)
+        return clamp(1.0 - 0.5 * (val_diff + aro_diff), 0.0, 1.0)
 
     @staticmethod
     def _token_overlap(query_tokens: list[str], trace_tokens: list[str]) -> float:

@@ -97,6 +97,7 @@ class ARMWebSocketSession:
                 project_id=payload.get("project_id", "default"),
                 user_id=payload.get("user_id", "default"),
                 message=payload.get("message", ""),
+                user_emotion_hint=payload.get("user_emotion_hint"),
             )
             await self._send_response(request, result.to_dict())
             return
