@@ -482,19 +482,38 @@ class SQLiteMemoryStore:
             rows = active_conn.execute(sql, params).fetchall()
         return [self._row_to_trace(row) for row in rows]
 
-    def record_memory_access(self, trace_id: str) -> None:
+    def record_memory_access(
+        self,
+        trace_id: str,
+        *,
+        salience_boost: float = 0.0,
+        salience_cap: float = 1.0,
+    ) -> None:
         now = to_iso(utcnow())
         with self._connect() as conn:
-            conn.execute(
-                """
-                UPDATE memory_traces
-                SET access_count = access_count + 1,
-                    last_accessed_at = ?,
-                    updated_at = ?
-                WHERE trace_id = ?
-                """,
-                (now, now, trace_id),
-            )
+            if salience_boost > 0:
+                conn.execute(
+                    """
+                    UPDATE memory_traces
+                    SET access_count = access_count + 1,
+                        last_accessed_at = ?,
+                        updated_at = ?,
+                        salience = MIN(?, salience + ?)
+                    WHERE trace_id = ?
+                    """,
+                    (now, now, salience_cap, salience_boost, trace_id),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE memory_traces
+                    SET access_count = access_count + 1,
+                        last_accessed_at = ?,
+                        updated_at = ?
+                    WHERE trace_id = ?
+                    """,
+                    (now, now, trace_id),
+                )
 
     def apply_semantic_fact(
         self,

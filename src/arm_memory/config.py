@@ -72,6 +72,8 @@ class ARMConfig:
     memory_archive_min_salience: float = 0.20
     memory_merge_similarity_threshold: float = 0.85
     memory_merge_skip_emotion_contradiction: bool = True
+    salience_boost_per_access: float = 0.02
+    salience_cap: float = 1.0
     companion_node_name: str = "companion:self"
     service_host: str = "127.0.0.1"
     service_port: int = 8788
@@ -147,6 +149,8 @@ class ARMConfig:
             memory_archive_min_salience=float(os.getenv("ARM_MEMORY_ARCHIVE_MIN_SALIENCE", "0.20")),
             memory_merge_similarity_threshold=float(os.getenv("ARM_MEMORY_MERGE_SIMILARITY_THRESHOLD", "0.85")),
             memory_merge_skip_emotion_contradiction=_env_bool("ARM_MEMORY_MERGE_SKIP_EMOTION_CONTRADICTION", True),
+            salience_boost_per_access=float(os.getenv("ARM_SALIENCE_BOOST_PER_ACCESS", "0.02")),
+            salience_cap=float(os.getenv("ARM_SALIENCE_CAP", "1.0")),
             companion_node_name=os.getenv("ARM_COMPANION_NODE_NAME", "companion:self"),
             service_host=os.getenv("ARM_SERVICE_HOST", "127.0.0.1"),
             service_port=int(os.getenv("ARM_SERVICE_PORT", "8788")),

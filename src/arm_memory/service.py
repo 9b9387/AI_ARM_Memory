@@ -119,7 +119,11 @@ class ARMMemoryService:
             query=message,
         )
         for hit in hits:
-            self.sqlite_store.record_memory_access(hit.trace.trace_id)
+            self.sqlite_store.record_memory_access(
+                hit.trace.trace_id,
+                salience_boost=self.config.salience_boost_per_access,
+                salience_cap=self.config.salience_cap,
+            )
 
         procedures = self.select_procedures(
             message=message,
