@@ -404,6 +404,7 @@ class SleepCycleConsolidator:
         profile_override: UserProfile | None = None,
         profile_items_override: list[UserProfileItem] | None = None,
         relationship_override: RelationshipState | None = None,
+        focus_facets: list[ProfileFacetType] | None = None,
     ) -> UserManualSnapshot:
         profile = profile_override or self.sqlite_store.load_profile(project_id, user_id)
         if profile_items_override is not None:
@@ -440,9 +441,14 @@ class SleepCycleConsolidator:
         for item in profile_items:
             grouped_items[item.facet_type.value].append(item.value)
             
+        focus_set: set[str] | None = None
+        if focus_facets:
+            focus_set = {f.value for f in focus_facets}
+
         def _get_facet_lines(facet_type: str, legacy_list: list[str]) -> list[str]:
+            if focus_set is not None and facet_type not in focus_set:
+                return []
             items = grouped_items.get(facet_type, [])
-            # Merge and deduplicate, preferring profile_items
             seen = set(items)
             for old_item in legacy_list:
                 if old_item not in seen:
@@ -450,61 +456,27 @@ class SleepCycleConsolidator:
                     seen.add(old_item)
             return items
 
-        identities = _get_facet_lines("identity_notes", profile.identity_notes)
-        if identities:
-            lines.append("- 身份信息：" + "；".join(identities[:4]))
-            
-        prefs = _get_facet_lines("preferences", profile.preferences)
-        if prefs:
-            lines.append("- 偏好：" + "；".join(prefs[:6]))
-            
-        dislikes = _get_facet_lines("dislikes", profile.dislikes)
-        if dislikes:
-            lines.append("- 反感或规避：" + "；".join(dislikes[:6]))
-            
-        boundaries = _get_facet_lines("boundaries", profile.boundaries)
-        if boundaries:
-            lines.append("- 明确边界：" + "；".join(boundaries[:6]))
-            
-        vulns = _get_facet_lines("vulnerabilities", profile.vulnerabilities)
-        if vulns:
-            lines.append("- 脆弱点：" + "；".join(vulns[:4]))
-            
-        supports = _get_facet_lines("support_preferences", profile.support_preferences)
-        if supports:
-            lines.append("- 支持方式：" + "；".join(supports[:4]))
-            
-        goals = _get_facet_lines("goals", profile.goals)
-        if goals:
-            lines.append("- 当前目标：" + "；".join(goals[:4]))
-            
-        traits = _get_facet_lines("personality_traits", profile.personality_traits)
-        if traits:
-            lines.append("- 性格特征：" + "；".join(traits[:6]))
-            
-        hobbies = _get_facet_lines("hobbies", profile.hobbies)
-        if hobbies:
-            lines.append("- 爱好：" + "；".join(hobbies[:6]))
-            
-        habits = _get_facet_lines("habits", profile.habits)
-        if habits:
-            lines.append("- 习惯：" + "；".join(habits[:6]))
-            
-        styles = _get_facet_lines("communication_style", profile.communication_style)
-        if styles:
-            lines.append("- 沟通风格：" + "；".join(styles[:4]))
-            
-        attach = _get_facet_lines("attachment_style", profile.attachment_style)
-        if attach:
-            lines.append("- 依恋风格：" + "；".join(attach[:4]))
-            
-        routines = _get_facet_lines("life_routines", profile.life_routines)
-        if routines:
-            lines.append("- 生活节律：" + "；".join(routines[:4]))
-            
-        manual = _get_facet_lines("manual_notes", profile.manual_notes)
-        if manual:
-            lines.append("- 人工备注：" + "；".join(manual[:6]))
+        _FACET_SPEC: list[tuple[str, str, list[str], int]] = [
+            ("identity_notes", "身份信息", profile.identity_notes, 4),
+            ("preferences", "偏好", profile.preferences, 6),
+            ("dislikes", "反感或规避", profile.dislikes, 6),
+            ("boundaries", "明确边界", profile.boundaries, 6),
+            ("vulnerabilities", "脆弱点", profile.vulnerabilities, 4),
+            ("support_preferences", "支持方式", profile.support_preferences, 4),
+            ("goals", "当前目标", profile.goals, 4),
+            ("personality_traits", "性格特征", profile.personality_traits, 6),
+            ("hobbies", "爱好", profile.hobbies, 6),
+            ("habits", "习惯", profile.habits, 6),
+            ("communication_style", "沟通风格", profile.communication_style, 4),
+            ("attachment_style", "依恋风格", profile.attachment_style, 4),
+            ("life_routines", "生活节律", profile.life_routines, 4),
+            ("manual_notes", "人工备注", profile.manual_notes, 6),
+        ]
+
+        for facet_key, label, legacy, max_n in _FACET_SPEC:
+            vals = _get_facet_lines(facet_key, legacy)
+            if vals:
+                lines.append(f"- {label}：" + "；".join(vals[:max_n]))
 
         lines.append("\n## 关系状态")
         lines.append(f"- 阶段：{relationship.current_stage.value}")

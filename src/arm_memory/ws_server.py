@@ -94,12 +94,14 @@ class ARMWebSocketSession:
 
         if action == "build_context":
             raw_max_tokens = payload.get("max_context_tokens")
+            raw_focus = payload.get("focus_facets")
             result = self.service.build_context(
                 project_id=payload.get("project_id", "default"),
                 user_id=payload.get("user_id", "default"),
                 message=payload.get("message", ""),
                 user_emotion_hint=payload.get("user_emotion_hint"),
                 max_context_tokens=int(raw_max_tokens) if raw_max_tokens is not None else None,
+                focus_facets=list(raw_focus) if raw_focus else None,
             )
             await self._send_response(request, result.to_dict())
             return

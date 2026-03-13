@@ -97,6 +97,7 @@ class ARMMemoryService:
         message: str,
         user_emotion_hint: EmotionVector | dict | None = None,
         max_context_tokens: int | None = None,
+        focus_facets: list[str] | None = None,
     ) -> BuildContextResult:
         logger.info(
             "Building context: project_id={} user_id={} message_length={}",
@@ -110,16 +111,34 @@ class ARMMemoryService:
         elif isinstance(user_emotion_hint, EmotionVector):
             emotion_hint = user_emotion_hint
 
+        parsed_facets: list[ProfileFacetType] | None = None
+        if focus_facets:
+            parsed_facets = []
+            for f in focus_facets:
+                try:
+                    parsed_facets.append(ProfileFacetType(f))
+                except ValueError:
+                    pass
+
         persona_prompt = self.load_persona_prompt(project_id=project_id, user_id=user_id)
         relationship = self.sqlite_store.load_relationship_state(project_id, user_id)
-        snapshot = self.sqlite_store.load_user_manual(project_id, user_id)
-        if snapshot is None:
+
+        if parsed_facets:
             snapshot = self.consolidator.build_user_manual(
                 project_id=project_id,
                 user_id=user_id,
                 persona_prompt=persona_prompt,
+                focus_facets=parsed_facets,
             )
-            self.sqlite_store.save_user_manual(snapshot)
+        else:
+            snapshot = self.sqlite_store.load_user_manual(project_id, user_id)
+            if snapshot is None:
+                snapshot = self.consolidator.build_user_manual(
+                    project_id=project_id,
+                    user_id=user_id,
+                    persona_prompt=persona_prompt,
+                )
+                self.sqlite_store.save_user_manual(snapshot)
 
         hits = self.retrieval_engine.retrieve(
             project_id=project_id,
