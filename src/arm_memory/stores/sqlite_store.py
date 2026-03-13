@@ -1497,6 +1497,72 @@ class SQLiteMemoryStore:
             keep.trace_id, discard.trace_id, new_salience, new_access_count,
         )
 
+    def archive_redundant_episodic_traces(
+        self,
+        project_id: str,
+        user_id: str,
+        *,
+        min_age_days: int = 60,
+        semantic_confidence_min: float = 0.8,
+        conn: sqlite3.Connection | None = None,
+    ) -> int:
+        """Archive episodic traces whose entities are covered by high-confidence semantic facts."""
+        cutoff = to_iso(utcnow() - timedelta(days=min_age_days))
+        context = nullcontext(conn) if conn is not None else self._connect()
+        with context as active_conn:
+            traces = active_conn.execute(
+                """
+                SELECT trace_id, entities_json FROM memory_traces
+                WHERE project_id = ? AND user_id = ? AND status = 'active'
+                  AND kind = 'episodic' AND updated_at < ?
+                """,
+                (project_id, user_id, cutoff),
+            ).fetchall()
+            if not traces:
+                return 0
+
+            facts = active_conn.execute(
+                """
+                SELECT subject, object_text FROM semantic_facts
+                WHERE project_id = ? AND user_id = ? AND status = 'active'
+                  AND confidence >= ?
+                """,
+                (project_id, user_id, semantic_confidence_min),
+            ).fetchall()
+            if not facts:
+                return 0
+
+            from arm_memory.utils import normalize_text
+            fact_terms: set[str] = set()
+            for f in facts:
+                fact_terms.add(normalize_text(f["subject"]))
+                fact_terms.add(normalize_text(f["object_text"]))
+
+            now = to_iso(utcnow())
+            archived = 0
+            for row in traces:
+                entities = loads_json(row["entities_json"], default=[])
+                if not entities:
+                    continue
+                entity_set = {normalize_text(e) for e in entities}
+                if entity_set & fact_terms:
+                    active_conn.execute(
+                        """
+                        UPDATE memory_traces
+                        SET status = 'archived', updated_at = ?,
+                            metadata_json = json_set(COALESCE(metadata_json, '{}'), '$.archived_reason', 'semantic_covered')
+                        WHERE trace_id = ?
+                        """,
+                        (now, row["trace_id"]),
+                    )
+                    archived += 1
+            if archived:
+                logger.info(
+                    "archive_redundant_episodic project={} user={} archived={}",
+                    project_id, user_id, archived,
+                )
+            return archived
+
     def _row_to_profile_item(self, row: sqlite3.Row) -> UserProfileItem:
         return profile_item_from_dict(
             {

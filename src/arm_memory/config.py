@@ -74,6 +74,8 @@ class ARMConfig:
     retrieval_qdrant_prefetch_factor: int = 2
     memory_archive_min_age_days: int = 90
     memory_archive_min_salience: float = 0.20
+    memory_archive_episodic_after_semantic_days: int = 60
+    memory_archive_episodic_semantic_confidence_min: float = 0.8
     memory_merge_similarity_threshold: float = 0.85
     memory_merge_skip_emotion_contradiction: bool = True
     salience_boost_per_access: float = 0.02
@@ -155,6 +157,8 @@ class ARMConfig:
             retrieval_qdrant_prefetch_factor=int(os.getenv("ARM_RETRIEVAL_QDRANT_PREFETCH_FACTOR", "2")),
             memory_archive_min_age_days=int(os.getenv("ARM_MEMORY_ARCHIVE_MIN_AGE_DAYS", "90")),
             memory_archive_min_salience=float(os.getenv("ARM_MEMORY_ARCHIVE_MIN_SALIENCE", "0.20")),
+            memory_archive_episodic_after_semantic_days=int(os.getenv("ARM_MEMORY_ARCHIVE_EPISODIC_AFTER_SEMANTIC_DAYS", "60")),
+            memory_archive_episodic_semantic_confidence_min=float(os.getenv("ARM_MEMORY_ARCHIVE_EPISODIC_SEMANTIC_CONFIDENCE_MIN", "0.8")),
             memory_merge_similarity_threshold=float(os.getenv("ARM_MEMORY_MERGE_SIMILARITY_THRESHOLD", "0.85")),
             memory_merge_skip_emotion_contradiction=_env_bool("ARM_MEMORY_MERGE_SKIP_EMOTION_CONTRADICTION", True),
             salience_boost_per_access=float(os.getenv("ARM_SALIENCE_BOOST_PER_ACCESS", "0.02")),

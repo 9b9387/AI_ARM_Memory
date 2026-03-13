@@ -338,6 +338,18 @@ class SleepCycleConsolidator:
             logger.exception("archive_stale_traces failed")
 
         try:
+            redundant = self.sqlite_store.archive_redundant_episodic_traces(
+                project_id,
+                user_id,
+                min_age_days=self.config.memory_archive_episodic_after_semantic_days,
+                semantic_confidence_min=self.config.memory_archive_episodic_semantic_confidence_min,
+            )
+            if redundant:
+                result.notes.append(f"archived_redundant_episodic={redundant}")
+        except Exception:
+            logger.exception("archive_redundant_episodic failed")
+
+        try:
             traces = self.sqlite_store.list_active_memory_traces(
                 project_id,
                 user_id,
