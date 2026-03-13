@@ -64,7 +64,16 @@ class HybridRetrievalEngine:
                 entities=query_tokens,
                 limit=16,
             )
-            # Combine graph entity boosts into related_nodes for scoring
+            if self.config.neo4j_max_hops >= 2:
+                multihop = self.neo4j_store.search_related_multihop(
+                    project_id=project_id,
+                    user_id=user_id,
+                    entities=query_tokens,
+                    max_hops=self.config.neo4j_max_hops,
+                    limit=20,
+                )
+                for key, value in multihop.items():
+                    graph_boosts[key] = max(graph_boosts.get(key, 0.0), value)
             for key, value in graph_boosts.items():
                 related_nodes[key] = max(related_nodes.get(key, 0.0), value)
 

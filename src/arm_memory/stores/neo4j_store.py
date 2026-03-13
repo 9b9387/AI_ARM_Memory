@@ -183,3 +183,44 @@ class Neo4jGraphStore:
         except Exception:
             logger.exception("Neo4j search_related failed")
             return {}
+
+    def search_related_multihop(
+        self,
+        *,
+        project_id: str,
+        user_id: str,
+        entities: list[str],
+        max_hops: int = 2,
+        limit: int = 20,
+    ) -> dict[str, float]:
+        if not self.enabled or not self.driver or not entities:
+            return {}
+        statement = f"""
+        MATCH (n:Entity {{project_id: $project_id, user_id: $user_id}})
+        WHERE n.key IN $entities
+        MATCH path = (n)-[:RELATED*1..{max_hops}]-(m:Entity)
+        WHERE m.project_id = $project_id AND m.user_id = $user_id
+          AND NOT m.key IN $entities
+        WITH m.key AS key, length(path) AS hops
+        RETURN key, MAX(1.0 / (1.0 + hops)) AS score
+        ORDER BY score DESC
+        LIMIT $limit
+        """
+        try:
+            with self.driver.session(database=self.database) as session:
+                result = session.execute_read(
+                    lambda tx: tx.run(
+                        statement,
+                        project_id=project_id,
+                        user_id=user_id,
+                        entities=entities,
+                        limit=limit,
+                    ).data()
+                )
+                matches: dict[str, float] = {}
+                for record in result:
+                    matches[str(record["key"])] = float(record["score"])
+                return matches
+        except Exception:
+            logger.exception("Neo4j search_related_multihop failed")
+            return {}

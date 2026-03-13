@@ -43,6 +43,7 @@ class ARMConfig:
     neo4j_user: str = ""
     neo4j_password: str = ""
     neo4j_database: str = "neo4j"
+    neo4j_max_hops: int = 2
     retrieval_top_k: int = 6
     working_memory_turns: int = 12
     user_manual_memory_limit: int = 12
@@ -119,6 +120,7 @@ class ARMConfig:
             neo4j_user=os.getenv("ARM_NEO4J_USER", ""),
             neo4j_password=os.getenv("ARM_NEO4J_PASSWORD", ""),
             neo4j_database=os.getenv("ARM_NEO4J_DATABASE", "neo4j"),
+            neo4j_max_hops=int(os.getenv("ARM_NEO4J_MAX_HOPS", "2")),
             retrieval_top_k=int(os.getenv("ARM_RETRIEVAL_TOP_K", "6")),
             working_memory_turns=int(os.getenv("ARM_WORKING_MEMORY_TURNS", "12")),
             user_manual_memory_limit=int(os.getenv("ARM_USER_MANUAL_MEMORY_LIMIT", "12")),
