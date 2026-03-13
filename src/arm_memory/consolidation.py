@@ -246,6 +246,19 @@ class SleepCycleConsolidator:
                     source_turns=source_turns,
                 )
                 item["_source_trace_id"] = trace.trace_id
+
+                supersedes_fid = item.get("supersedes_fact_id")
+                supersedes_obj = item.get("supersedes_object")
+                if supersedes_fid:
+                    self.sqlite_store.mark_semantic_fact_deleted(supersedes_fid, conn=conn)
+                elif supersedes_obj:
+                    self.sqlite_store.mark_semantic_facts_deleted_by_key_object(
+                        project_id, user_id,
+                        fact.normalized_key,
+                        normalize_text(str(supersedes_obj)),
+                        conn=conn,
+                    )
+
                 fact_op = self.sqlite_store.apply_semantic_fact(
                     fact,
                     operation=self._operation_from_value(item.get("operation")),

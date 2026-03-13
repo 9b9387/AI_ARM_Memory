@@ -515,6 +515,48 @@ class SQLiteMemoryStore:
                     (now, now, trace_id),
                 )
 
+    def mark_semantic_fact_deleted(
+        self,
+        fact_id: str,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> bool:
+        now = to_iso(utcnow())
+        context = nullcontext(conn) if conn is not None else self._connect()
+        with context as active_conn:
+            cur = active_conn.execute(
+                """
+                UPDATE semantic_facts
+                SET status = 'deleted', valid_to = ?, updated_at = ?
+                WHERE fact_id = ? AND status = 'active'
+                """,
+                (now, now, fact_id),
+            )
+            return cur.rowcount > 0
+
+    def mark_semantic_facts_deleted_by_key_object(
+        self,
+        project_id: str,
+        user_id: str,
+        normalized_key: str,
+        normalized_object: str,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> int:
+        now = to_iso(utcnow())
+        context = nullcontext(conn) if conn is not None else self._connect()
+        with context as active_conn:
+            cur = active_conn.execute(
+                """
+                UPDATE semantic_facts
+                SET status = 'deleted', valid_to = ?, updated_at = ?
+                WHERE project_id = ? AND user_id = ? AND normalized_key = ?
+                  AND normalized_object = ? AND status = 'active'
+                """,
+                (now, now, project_id, user_id, normalized_key, normalized_object),
+            )
+            return cur.rowcount
+
     def apply_semantic_fact(
         self,
         fact: SemanticFact,
