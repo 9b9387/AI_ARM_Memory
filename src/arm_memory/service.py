@@ -98,6 +98,7 @@ class ARMMemoryService:
         user_emotion_hint: EmotionVector | dict | None = None,
         max_context_tokens: int | None = None,
         focus_facets: list[str] | None = None,
+        retrieval_mode: str = "default",
     ) -> BuildContextResult:
         logger.info(
             "Building context: project_id={} user_id={} message_length={}",
@@ -158,6 +159,7 @@ class ARMMemoryService:
             user_id=user_id,
             query=retrieval_query,
             query_emotion_hint=emotion_hint,
+            retrieval_mode=retrieval_mode,
         )
         for hit in hits:
             self.sqlite_store.record_memory_access(

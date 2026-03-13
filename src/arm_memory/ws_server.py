@@ -102,6 +102,7 @@ class ARMWebSocketSession:
                 user_emotion_hint=payload.get("user_emotion_hint"),
                 max_context_tokens=int(raw_max_tokens) if raw_max_tokens is not None else None,
                 focus_facets=list(raw_focus) if raw_focus else None,
+                retrieval_mode=str(payload.get("retrieval_mode", "default")),
             )
             await self._send_response(request, result.to_dict())
             return

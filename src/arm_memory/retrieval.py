@@ -31,6 +31,25 @@ class HybridRetrievalEngine:
         self.qdrant_store = qdrant_store
         self.neo4j_store = neo4j_store
 
+    _RETRIEVAL_MODE_WEIGHTS: dict[str, dict[str, float]] = {
+        "fact": {
+            "retrieval_weight_semantic": 0.30,
+            "retrieval_weight_lexical": 0.25,
+            "retrieval_weight_graph": 0.30,
+            "retrieval_weight_salience": 0.10,
+            "retrieval_weight_remote": 0.05,
+            "retrieval_weight_emotion": 0.00,
+        },
+        "emotional": {
+            "retrieval_weight_semantic": 0.30,
+            "retrieval_weight_lexical": 0.10,
+            "retrieval_weight_graph": 0.10,
+            "retrieval_weight_salience": 0.20,
+            "retrieval_weight_remote": 0.05,
+            "retrieval_weight_emotion": 0.25,
+        },
+    }
+
     def retrieve(
         self,
         *,
@@ -39,6 +58,7 @@ class HybridRetrievalEngine:
         query: str,
         top_k: int | None = None,
         query_emotion_hint: EmotionVector | None = None,
+        retrieval_mode: str = "default",
     ) -> list[RetrievalHit]:
         t0 = time.monotonic()
         limit = top_k or self.config.retrieval_top_k
@@ -112,6 +132,7 @@ class HybridRetrievalEngine:
             return []
 
         # 5. Score and filter the traces
+        weight_overrides = self._RETRIEVAL_MODE_WEIGHTS.get(retrieval_mode)
         scored: list[RetrievalHit] = []
         qdrant_candidate_ids = set(vector_boosts.keys()) if vector_boosts else set()
         
@@ -127,7 +148,7 @@ class HybridRetrievalEngine:
                     if not has_graph_hit:
                         continue
 
-            breakdown = self._score_trace(trace, query_tokens, query_vector, related_nodes, vector_boosts, query_emotion_hint)
+            breakdown = self._score_trace(trace, query_tokens, query_vector, related_nodes, vector_boosts, query_emotion_hint, weight_overrides)
             total = breakdown.pop("total")
             if total <= 0:
                 continue
@@ -162,6 +183,7 @@ class HybridRetrievalEngine:
         related_nodes: dict[str, float],
         qdrant_scores: dict[str, float],
         query_emotion_hint: EmotionVector | None = None,
+        weight_overrides: dict[str, float] | None = None,
     ) -> dict[str, float]:
         trace_tokens = self.vectorizer.tokenize(" ".join([trace.summary, trace.raw_text, *trace.entities, *trace.tags]))
         lexical = self._token_overlap(query_tokens, trace_tokens)
@@ -187,13 +209,18 @@ class HybridRetrievalEngine:
 
         emotion_similarity = self._emotion_similarity(trace.emotion, query_emotion_hint)
 
+        def _w(key: str) -> float:
+            if weight_overrides and key in weight_overrides:
+                return weight_overrides[key]
+            return getattr(self.config, key)
+
         total = (
-            semantic_similarity * self.config.retrieval_weight_semantic
-            + lexical * self.config.retrieval_weight_lexical
-            + graph_proximity * self.config.retrieval_weight_graph
-            + attentional_weight * self.config.retrieval_weight_salience
-            + remote_boost * self.config.retrieval_weight_remote
-            + emotion_similarity * self.config.retrieval_weight_emotion
+            semantic_similarity * _w("retrieval_weight_semantic")
+            + lexical * _w("retrieval_weight_lexical")
+            + graph_proximity * _w("retrieval_weight_graph")
+            + attentional_weight * _w("retrieval_weight_salience")
+            + remote_boost * _w("retrieval_weight_remote")
+            + emotion_similarity * _w("retrieval_weight_emotion")
         ) * temporal_decay * access_boost
         total = clamp(total, 0.0, 10.0)
         return {
