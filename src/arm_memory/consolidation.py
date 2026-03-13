@@ -374,7 +374,9 @@ class SleepCycleConsolidator:
         if remote_sync_enqueued:
             result.notes.append(f"remote_sync_enqueued={remote_sync_enqueued}")
         if extraction.get("safety_flags"):
-            result.notes.append("Safety flags: " + ", ".join(extraction["safety_flags"]))
+            result.notes.append("Safety flags: " + ", ".join(
+                str(flag) for flag in extraction["safety_flags"]
+            ))
 
         # ------------------------------------------------------------------
         # Post-consolidation: archive stale traces & merge similar ones

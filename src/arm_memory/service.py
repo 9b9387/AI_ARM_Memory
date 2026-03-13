@@ -578,6 +578,21 @@ class ARMMemoryService:
         )
         return item
 
+    def list_semantic_facts(
+        self,
+        *,
+        project_id: str,
+        user_id: str,
+        limit: int = 100,
+        active_only: bool = True,
+    ) -> list[SemanticFact]:
+        return self.sqlite_store.list_semantic_facts(
+            project_id,
+            user_id,
+            limit=limit,
+            active_only=active_only,
+        )
+
     def list_personas(
         self,
         *,
@@ -624,6 +639,28 @@ class ARMMemoryService:
         )
         return persona
 
+    def save_procedure(
+        self,
+        *,
+        rule: ProcedureRule,
+        overwrite: bool = True,
+    ) -> ProcedureRule:
+        self.config.policies_dir.mkdir(parents=True, exist_ok=True)
+        path = self.config.policies_dir / self._procedure_filename(rule.name)
+        if path.exists() and not overwrite:
+            raise ValueError(f"Procedure already exists: {path.name}")
+        path.write_text(self._render_procedure_markdown(rule), encoding="utf-8")
+        logger.info("Procedure saved: name={} path={}", rule.name, path)
+        return ProcedureRule(
+            name=rule.name,
+            prompt=rule.prompt,
+            priority=rule.priority,
+            triggers=list(rule.triggers),
+            tags=list(rule.tags),
+            path=str(path),
+            enabled=rule.enabled,
+        )
+
     def _validate_remote_dependencies(self) -> None:
         """当 config 要求时，校验 Qdrant / Neo4j 已配置且可达，否则退出并输出启动方法。"""
         _qdrant_help = (
@@ -633,7 +670,7 @@ class ARMMemoryService:
         _neo4j_help = (
             "启动 Neo4j: docker run -d --name neo4j -p 7474:7474 -p 7687:7687 "
             "-e NEO4J_AUTH=neo4j/your-password neo4j:latest\n"
-            "配置: ARM_NEO4J_URL=http://127.0.0.1:7474 ARM_NEO4J_USER=neo4j ARM_NEO4J_PASSWORD=your-password"
+            "配置: ARM_NEO4J_URL=bolt://127.0.0.1:7687 ARM_NEO4J_USER=neo4j ARM_NEO4J_PASSWORD=your-password"
         )
         if self.config.require_qdrant and not self.qdrant_store.enabled:
             raise ValueError(
@@ -805,6 +842,32 @@ class ARMMemoryService:
         )
         self.sqlite_store.save_persona(persona)
         return persona
+
+    @staticmethod
+    def _procedure_filename(name: str) -> str:
+        normalized = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in name.strip().lower())
+        normalized = "-".join(part for part in normalized.split("-") if part)
+        if not normalized:
+            raise ValueError("Procedure name cannot be empty.")
+        return f"{normalized}.md"
+
+    @staticmethod
+    def _render_procedure_markdown(rule: ProcedureRule) -> str:
+        lines = [
+            "---",
+            f"name: {rule.name}",
+            f"priority: {int(rule.priority)}",
+            "triggers:",
+        ]
+        for item in rule.triggers:
+            lines.append(f"  - {item}")
+        lines.append("tags:")
+        for item in rule.tags:
+            lines.append(f"  - {item}")
+        lines.append(f"enabled: {'true' if rule.enabled else 'false'}")
+        lines.append("---")
+        lines.append(rule.prompt.strip())
+        return "\n".join(lines).strip() + "\n"
 
     def _semantic_fact_from_payload(self, payload: dict[str, Any]) -> SemanticFact:
         return SemanticFact(

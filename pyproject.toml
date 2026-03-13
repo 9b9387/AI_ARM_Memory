@@ -18,7 +18,7 @@ dependencies = [
     "pydantic>=2,<3",
     "python-dotenv",
     "qdrant-client>=1.7.0",
-    "uvicorn",
+    "uvicorn[standard]",
 ]
 
 [project.optional-dependencies]

@@ -138,9 +138,9 @@ class QdrantVectorStore:
         if not self.enabled or not self.client or not query_vector:
             return {}
         try:
-            results = self.client.search(
+            response = self.client.query_points(
                 collection_name=self.collection,
-                query_vector=query_vector,
+                query=query_vector,
                 limit=limit,
                 with_payload=False,
                 query_filter=models.Filter(
@@ -154,8 +154,8 @@ class QdrantVectorStore:
                     ]
                 ),
             )
-            
-            hits = {str(hit.id): hit.score for hit in results}
+
+            hits = {str(point.id): point.score for point in response.points}
             return hits
         except Exception:
             logger.exception("Failed to search Qdrant")

@@ -94,7 +94,7 @@ docker run -d --name neo4j \
   neo4j:latest
 ```
 
-配置环境变量：`ARM_NEO4J_URL=http://127.0.0.1:7474`、`ARM_NEO4J_USER=neo4j`、`ARM_NEO4J_PASSWORD=your-password`。
+配置环境变量：`ARM_NEO4J_URL=bolt://127.0.0.1:7687`、`ARM_NEO4J_USER=neo4j`、`ARM_NEO4J_PASSWORD=your-password`。注意 `7474` 是 Neo4j Browser 的 HTTP 端口，Python 驱动连接数据库要用 `7687` 的 Bolt 端口。
 
 上述目录均以**项目根目录**为基准；这样容器重启或重建后，Qdrant 与 Neo4j 的数据仍会保留在本地 `./data/` 下。
 

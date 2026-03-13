@@ -4,6 +4,7 @@ from typing import Any
 
 from loguru import logger
 from neo4j import GraphDatabase
+from neo4j.exceptions import ConfigurationError
 
 from arm_memory.domain.models import GraphEdge, RelationshipState, SemanticFact
 
@@ -22,6 +23,7 @@ class Neo4jGraphStore:
         self.password = password
         self.database = database
         if self.enabled:
+            self._validate_url_scheme()
             self.driver = GraphDatabase.driver(self.url, auth=(self.user, self.password))
         else:
             self.driver = None
@@ -33,6 +35,15 @@ class Neo4jGraphStore:
     @property
     def enabled(self) -> bool:
         return bool(self.url and self.user and self.password)
+
+    def _validate_url_scheme(self) -> None:
+        if self.url.startswith(("http://", "https://")):
+            raise ConfigurationError(
+                "ARM_NEO4J_URL 不能使用 http(s) 协议；Neo4j Python 驱动只支持 "
+                "bolt://、bolt+s://、bolt+ssc://、neo4j://、neo4j+s://、neo4j+ssc://。"
+                "如果你在本机 Docker 默认端口运行 Neo4j，请改成 "
+                "bolt://127.0.0.1:7687。"
+            )
 
     def ping(self) -> bool:
         if not self.enabled or not self.driver:

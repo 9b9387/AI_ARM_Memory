@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from loguru import logger
 
-from arm_memory.domain.models import SensitivityLevel, persona_from_dict, relationship_from_dict
+from arm_memory.domain.models import ProcedureRule, SensitivityLevel, persona_from_dict, relationship_from_dict
 from arm_memory.logging_config import setup_logging
 from arm_memory.protocol import ARMError, ARMEvent, ARMRequest, ARMResponse
 from arm_memory.service import ARMMemoryService
@@ -258,6 +258,16 @@ class ARMWebSocketSession:
             await self._send_response(request, {"items": [item.to_dict() for item in items]})
             return
 
+        if action == "list_semantic_facts":
+            facts = self.service.list_semantic_facts(
+                project_id=payload.get("project_id", "default"),
+                user_id=payload.get("user_id", "default"),
+                limit=int(payload.get("limit", 100)),
+                active_only=bool(payload.get("active_only", True)),
+            )
+            await self._send_response(request, {"facts": [fact.to_dict() for fact in facts]})
+            return
+
         if action == "save_profile_item":
             item = self.service.save_profile_item(
                 project_id=payload.get("project_id", "default"),
@@ -270,6 +280,24 @@ class ARMWebSocketSession:
                 metadata=dict(payload.get("metadata") or {}),
             )
             await self._send_response(request, {"item": item.to_dict()})
+            return
+
+        if action == "save_procedure":
+            rule_payload = dict(payload.get("rule") or {})
+            rule = ProcedureRule(
+                name=str(rule_payload.get("name") or ""),
+                prompt=str(rule_payload.get("prompt") or "").strip(),
+                priority=int(rule_payload.get("priority", 50)),
+                triggers=[str(item) for item in rule_payload.get("triggers", [])],
+                tags=[str(item) for item in rule_payload.get("tags", [])],
+                path=str(rule_payload.get("path") or ""),
+                enabled=bool(rule_payload.get("enabled", True)),
+            )
+            saved_rule = self.service.save_procedure(
+                rule=rule,
+                overwrite=bool(payload.get("overwrite", True)),
+            )
+            await self._send_response(request, {"rule": saved_rule.to_dict()})
             return
 
         if action == "replay_remote_sync_outbox":
